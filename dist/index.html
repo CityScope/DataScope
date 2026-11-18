@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="map.css" />
     <link rel="stylesheet" href="studio/scene.css" />
+    <link rel="stylesheet" href="editorial.css" />
     <script type="importmap">
       { "imports": { "three": "./studio/vendor/three.module.js" } }
     </script>
@@ -33,7 +34,9 @@
       </div>
       <nav class="views" aria-label="Workspace view">
         <button data-workview="studio" aria-pressed="true"><i data-icon="cube"></i>Scenario table</button
-        ><button data-workview="aerial" aria-pressed="false"><i data-icon="map"></i>Aerial map</button>
+        ><button data-workview="sentiment" aria-pressed="false">
+          <i data-icon="map"></i>Sentiment map
+        </button>
       </nav>
       <div class="top-actions">
         <button id="notes"><i data-icon="note"></i><span>Notes</span><b id="count">0</b></button
@@ -47,8 +50,8 @@
     <main>
       <section class="casehead">
         <div class="case-title">
-          <div class="kicker"><i data-icon="loc"></i>Michigan, United States</div>
-          <h1>Allen Park<span> / </span><small>Data center siting</small></h1>
+          <div class="kicker"><i data-icon="loc"></i>Allen Park, Michigan</div>
+          <h1 id="workspace-title">Where should the data center go?</h1>
         </div>
         <div class="case-actions">
           <label class="placement-select"
@@ -68,7 +71,7 @@
           <div class="stage-top">
             <div class="cam-modes" role="group" aria-label="Camera view">
               <button data-camera="site" aria-pressed="true">Site</button
-              ><button data-camera="building" aria-pressed="false">Building</button
+              ><button data-camera="building" aria-pressed="false">Inspect design</button
               ><button data-camera="district" aria-pressed="false">District</button
               ><button data-camera="plan" aria-pressed="false">Plan</button>
             </div>
@@ -86,6 +89,17 @@
               <div hidden id="layers-menu" class="popover"></div>
             </div>
           </div>
+          <article class="question-card" id="question-card" aria-label="Guided siting questions">
+            <div class="question-nav">
+              <span id="question-step"></span>
+              <div>
+                <button id="prev-question" aria-label="Previous siting question">‹</button
+                ><button id="next-question" aria-label="Next siting question">›</button>
+              </div>
+            </div>
+            <h2 id="question-title"></h2>
+            <p id="question-caption"></p>
+          </article>
           <div class="stage-bottom">
             <div class="stage-tools">
               <button id="move" aria-pressed="false"><i data-icon="move"></i>Move facility</button
@@ -111,19 +125,14 @@
           </div>
           <div id="modebar" hidden></div>
         </section>
-        <aside class="analysis" aria-label="Live scenario analysis">
-          <div class="analysis-head">
-            <div><span class="pulse"></span>Live analysis</div>
-            <button
-              id="methods"
-              class="icon-btn"
-              aria-label="How the estimates are calculated"
-              title="How the estimates are calculated"
-            >
-              <i data-icon="info"></i>
-            </button>
+        <aside class="design-tray" aria-label="Facility design options">
+          <div class="tray-title">
+            <span class="kicker">Design alternatives</span>
+            <h2>Choose the cooling system</h2>
+            <span id="design-caption">Same computing workload</span>
           </div>
-          <div class="metrics" id="metrics"></div>
+          <div class="design-choices" id="design-choices"></div>
+          <div class="design-detail" id="design-detail"></div>
           <section class="resources">
             <div class="minor-title">
               Annual resource use
@@ -138,16 +147,20 @@
           </button>
         </aside>
       </div>
-      <section class="design-tray" aria-label="Facility design options">
-        <div class="tray-title">
-          <div>
-            <span class="kicker">Facility design</span>
-            <h2>Design alternatives</h2>
-          </div>
-          <span id="design-caption">Same computing workload</span>
+      <section class="analysis" aria-label="Live scenario analysis">
+        <div class="analysis-head">
+          <div><span class="pulse"></span>Live analysis</div>
+          <small>Against proposed site</small
+          ><button id="methods" class="icon-btn" aria-label="How the estimates are calculated">
+            <i data-icon="info"></i>
+          </button>
         </div>
-        <div class="design-choices" id="design-choices"></div>
+        <div class="metrics" id="metrics"></div>
+        <div class="siting-cell">
+          <span>Placement check</span><button id="siting-check" title="Check the footprint"></button>
+        </div>
       </section>
+      <section id="sentiment" hidden aria-label="Map of simulated community discussions"></section>
       <footer>
         <span id="local-status"><b></b> Local workshop</span
         ><span>7500 Enterprise Drive <i>·</i> Preliminary plan denied June 2026</span>

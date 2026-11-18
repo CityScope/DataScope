@@ -117,7 +117,17 @@ function footprintCoverage(points) {
 }
 
 function riverClearance(points) {
-  let best = Infinity;
+  let best = Infinity,
+    footprint,
+    river;
+  function candidate(fx, fy, rx, ry) {
+    const squared = (fx - rx) ** 2 + (fy - ry) ** 2;
+    if (squared < best) {
+      best = squared;
+      footprint = [fx, fy];
+      river = [rx, ry];
+    }
+  }
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1],
       b = points[i];
@@ -142,24 +152,24 @@ function riverClearance(points) {
         exit = Math.min(exit, Math.max(t1, t2));
       }
     }
-    if (entry <= exit) return 0;
+    if (entry <= exit) {
+      const t = entry > 0 ? entry : exit < 1 ? exit : entry;
+      const crossing = [a[0] + t * dx, a[1] + t * dy];
+      return { distance: 0, footprint: crossing, river: crossing };
+    }
 
     // Disjoint segments have their closest point on at least one endpoint.
     for (const [x, y] of [a, b]) {
-      const ex = Math.max(0, Math.abs(x) - HALF_W),
-        ey = Math.max(0, Math.abs(y) - HALF_L);
-      best = Math.min(best, ex * ex + ey * ey);
+      candidate(Math.max(-HALF_W, Math.min(HALF_W, x)), Math.max(-HALF_L, Math.min(HALF_L, y)), x, y);
     }
     const lengthSquared = dx * dx + dy * dy;
     if (!lengthSquared) continue;
     for (const [x, y] of CORNERS) {
       const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / lengthSquared));
-      const ex = x - a[0] - t * dx,
-        ey = y - a[1] - t * dy;
-      best = Math.min(best, ex * ex + ey * ey);
+      candidate(x, y, a[0] + t * dx, a[1] + t * dy);
     }
   }
-  return Number.isFinite(best) ? Math.sqrt(best) : null;
+  return Number.isFinite(best) ? { distance: Math.sqrt(best), footprint, river } : null;
 }
 
 function evaluate(point, angle, design, receptorId) {
@@ -172,6 +182,7 @@ function evaluate(point, angle, design, receptorId) {
       soundDbA: null,
       soundNearField: false,
       riverSetbackM: null,
+      riverWitness: null,
       parcelCoveragePct: null,
       energyGWh: 0,
       waterMGal: 0,
@@ -185,27 +196,26 @@ function evaluate(point, angle, design, receptorId) {
       north = y - center[1];
     return [east * cos - north * sin, east * sin + north * cos];
   };
+  const nearest = riverClearance(reach.map(inFacilityFrame));
+  // The scene uses east/south meter coordinates. These endpoints come from
+  // the same nearest-point calculation as the clearance reported to residents.
+  const toScene = ([x, y]) => [center[0] + x * cos + y * sin, -center[1] + x * sin - y * cos];
   const source = equipmentInMeters(center, cos, sin);
   const distance = Math.hypot(source[0] - receptor.position[0], source[1] - receptor.position[1]);
   return {
     ...info,
     sourcePoint: toLatLng(source),
     soundNearField: distance < REFERENCE_DISTANCE,
-    soundDbA:
-      REFERENCE_DB - 20 * Math.log10(Math.max(distance, REFERENCE_DISTANCE) / REFERENCE_DISTANCE),
-    riverSetbackM: riverClearance(reach.map(inFacilityFrame)),
+    soundDbA: REFERENCE_DB - 20 * Math.log10(Math.max(distance, REFERENCE_DISTANCE) / REFERENCE_DISTANCE),
+    riverSetbackM: nearest?.distance ?? null,
+    riverWitness: nearest ? { footprint: toScene(nearest.footprint), river: toScene(nearest.river) } : null,
     parcelCoveragePct: footprintCoverage(parcel.map(inFacilityFrame)),
     ...RESOURCES[design]
   };
 }
-const baselines = new Map(
-  [...receptors.keys()].map((id) => [id, evaluate(site.center, 0, 'reference', id)])
-);
+const baselines = new Map([...receptors.keys()].map((id) => [id, evaluate(site.center, 0, 'reference', id)]));
 
-export function analyzePlacement(
-  { point, angle = 0, design = 'reference' },
-  { receptorId = 'riel' } = {}
-) {
+export function analyzePlacement({ point, angle = 0, design = 'reference' }, { receptorId = 'riel' } = {}) {
   if (!receptors.has(receptorId)) receptorId = 'riel';
   if (!Object.hasOwn(RESOURCES, design)) design = 'reference';
   const current = evaluate(point, angle, design, receptorId),

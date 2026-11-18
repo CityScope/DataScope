@@ -3,16 +3,17 @@ import { OrbitControls } from './vendor/OrbitControls.js';
 import { site, places, river } from '../geography.js';
 import { createFacility, createDistrict, tableBounds as BOARD } from './physical.js';
 import { analyzePlacement } from './analysis.js';
+import { createImpactOverlay } from './impact-overlay.js';
 
 const METERS_LAT = 111320;
 const METERS_LNG = METERS_LAT * Math.cos((site.center[0] * Math.PI) / 180);
 
-const HALF_TILE_X = 225;
-const HALF_TILE_Z = 136;
+const HALF_TILE_X = 226;
+const HALF_TILE_Z = 145;
 const EPS = 0.05;
 const framing = {
-  site: { direction: new THREE.Vector3(-0.93, 0.88, 1.08).normalize(), span: 260 },
-  building: { direction: new THREE.Vector3(-1.02, 0.64, 0.8).normalize(), span: 95 },
+  site: { direction: new THREE.Vector3(-0.9, 0.9, 1.12).normalize(), span: 305 },
+  building: { direction: new THREE.Vector3(-1.02, 0.84, 0.82).normalize(), span: 89 },
   district: { direction: new THREE.Vector3(-0.47, 1.14, 1.06).normalize(), span: 1550 },
   plan: { direction: new THREE.Vector3(0, 1, 0.001).normalize(), span: 530 }
 };
@@ -162,23 +163,11 @@ function districtBatches(group) {
 }
 
 function makeBackdrop(scene) {
-  const grid = document.createElement('canvas');
-  grid.width = grid.height = 256;
-  const ctx = grid.getContext('2d');
-  ctx.fillStyle = '#182228';
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = '#202c32';
-  ctx.fillRect(0, 0, 1, 256);
-  ctx.fillRect(0, 0, 256, 1);
-  ctx.fillStyle = '#334047';
-  ctx.fillRect(0, 0, 2, 2);
-  const tex = new THREE.CanvasTexture(grid);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(150, 150);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  // A continuous printed seafoam field, with a separate shadow catcher so the
+  // page color stays stable while shadows respond to model scale and sunlight.
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(9200, 9200),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.94, metalness: 0.06 })
+    new THREE.PlaneGeometry(8600, 8600),
+    new THREE.ShadowMaterial({ opacity: 0.24, depthWrite: false })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -26;
@@ -214,9 +203,9 @@ function makeStudioEnvironment(renderer, scene) {
 }
 
 function makeStudioLights(scene, narrow) {
-  const hemi = new THREE.HemisphereLight('#e2f4ff', '#516364', 0.72);
+  const hemi = new THREE.HemisphereLight('#e8f4f5', '#8f9680', 1.23);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight('#fff1d6', 2.53);
+  const key = new THREE.DirectionalLight('#ffeed1', 2.43);
   key.castShadow = true;
   key.shadow.mapSize.setScalar(narrow ? 1024 : 2048);
   key.shadow.normalBias = 0.16;
@@ -255,20 +244,24 @@ function makeSoundField() {
   const ctx = canvas.getContext('2d'),
     mid = 256;
   const gradient = ctx.createRadialGradient(mid, mid, 0, mid, mid, mid);
-  gradient.addColorStop(0, 'rgba(174,137,226,.23)');
-  gradient.addColorStop(0.3, 'rgba(164,125,213,.15)');
-  gradient.addColorStop(0.54, 'rgba(165,138,215,.08)');
+  gradient.addColorStop(0, 'rgba(159,75,171,.32)');
+  gradient.addColorStop(0.3, 'rgba(160,71,170,.20)');
+  gradient.addColorStop(0.54, 'rgba(175,81,169,.11)');
   gradient.addColorStop(1, 'rgba(165,138,215,0)');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 512, 512);
-  for (const level of [55, 50, 45]) {
+  // The continuous tint and equal-level rings have separate jobs. Only one
+  // line is drawn at each radius, with a physical height above the tint.
+  for (const [level, opacity] of [
+    [45, 0.035],
+    [50, 0.05],
+    [55, 0.075]
+  ]) {
     const px = ((15 * Math.pow(10, (65 - level) / 20)) / radius) * mid;
     ctx.beginPath();
     ctx.arc(mid, mid, px, 0, 2 * Math.PI);
-    ctx.strokeStyle = level === 55 ? 'rgba(185,149,245,.55)' : 'rgba(185,149,245,.37)';
-    ctx.lineWidth = level === 55 ? 1.5 : 1;
-    ctx.setLineDash([5, 4]);
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(152,73,151,' + opacity + ')';
+    ctx.fill();
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -277,7 +270,7 @@ function makeSoundField() {
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false })
   );
   disc.rotation.x = -Math.PI / 2;
-  disc.position.y = 0.42;
+  disc.position.y = 0.58;
   disc.renderOrder = 4;
   group.add(disc);
   for (const level of [55, 50, 45]) {
@@ -285,11 +278,11 @@ function makeSoundField() {
       p = [];
     for (let i = 0; i <= 200; i++) {
       const a = (i / 200) * Math.PI * 2;
-      p.push(new THREE.Vector3(Math.sin(a) * r, 0.55, Math.cos(a) * r));
+      p.push(new THREE.Vector3(Math.sin(a) * r, 0.79, Math.cos(a) * r));
     }
-    const line = dashedPath(p, level === 55 ? '#b39abc' : '#a594bc');
+    const line = dashedPath(p, level === 55 ? '#8a588e' : '#976992');
     line.material.toneMapped = false;
-    line.material.opacity = level === 55 ? 0.83 : level === 50 ? 0.63 : 0.52;
+    line.material.opacity = level === 55 ? 0.93 : level === 50 ? 0.74 : 0.62;
     line.material.dashSize = level === 55 ? 2.2 : 3.5;
     line.material.gapSize = 2.6;
     group.add(line);
@@ -368,15 +361,15 @@ export function makeScene(
   controls.zoomSpeed = 1.05;
   controls.panSpeed = 0.87;
   controls.zoomToCursor = false;
-  scene.background = new THREE.Color('#142027');
-  scene.fog = new THREE.FogExp2('#17242c', 0.000065);
+  scene.background = new THREE.Color('#b0d4d3');
+  scene.fog = null;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.8));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.localClippingEnabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.03;
+  renderer.toneMappingExposure = 0.98;
   const environment = makeStudioEnvironment(renderer, scene);
   const key = makeStudioLights(scene, element.clientWidth < 640);
   const floor = makeBackdrop(scene);
@@ -384,11 +377,11 @@ export function makeScene(
   scene.add(district);
   const setDistrictBatches = districtBatches(district);
   const tile = new THREE.Group();
-  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.8, HALF_TILE_Z * 2 + 1.8, 6.4, -0.64, '#667277'));
-  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.4, HALF_TILE_Z * 2 + 1.4, 0.88, -7.25, '#afafa2'));
-  tile.add(roundedPlinth(HALF_TILE_X * 2 - 1.5, HALF_TILE_Z * 2 - 1.5, 2.8, -8.2, '#354249'));
-  const tableShade = contactPatch(HALF_TILE_X * 2, HALF_TILE_Z * 2, 16, 0.54);
-  tableShade.position.y = -11.76;
+  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.8, HALF_TILE_Z * 2 + 1.8, 4.4, -0.64, '#a8a58f'));
+  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.4, HALF_TILE_Z * 2 + 1.4, 0.79, -5.66, '#e3d5ae'));
+  tile.add(roundedPlinth(HALF_TILE_X * 2 - 1.5, HALF_TILE_Z * 2 - 1.5, 1.75, -7.13, '#607d78'));
+  const tableShade = contactPatch(HALF_TILE_X * 2, HALF_TILE_Z * 2, 24, 0.22);
+  tableShade.position.y = -10.16;
   tile.add(tableShade);
   scene.add(tile);
   const facilityAnchor = new THREE.Group();
@@ -402,10 +395,10 @@ export function makeScene(
   const sound = makeSoundField(),
     waterLine = makeRiver();
   const parcel = dashedPath(
-    site.boundary.map((p) => toLocal(p, 0.68)),
-    '#e5b675'
+    site.boundary.map((p) => toLocal(p, 0.81)),
+    '#a36e30'
   );
-  const listeningTrace = dashedPath([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)], '#d6a8e8');
+  const listeningTrace = dashedPath([new THREE.Vector3(), new THREE.Vector3(1, 0, 0)], '#764180');
   listeningTrace.material.opacity = 0.83;
   listeningTrace.material.dashSize = 1.9;
   listeningTrace.material.gapSize = 2.9;
@@ -413,7 +406,7 @@ export function makeScene(
   const receptorRing = new THREE.Mesh(
     new THREE.RingGeometry(3.25, 4.55, 40),
     new THREE.MeshBasicMaterial({
-      color: '#e0b2ec',
+      color: '#794783',
       toneMapped: false,
       transparent: true,
       opacity: 0.86,
@@ -429,6 +422,8 @@ export function makeScene(
     new THREE.Plane(new THREE.Vector3(0, 0, 1)),
     new THREE.Plane(new THREE.Vector3(0, 0, -1))
   ];
+  const impact = createImpactOverlay(cropPlanes);
+  scene.add(impact.group);
   const materialSet = new Set();
   for (const group of [district, sound, waterLine, parcel, listeningTrace, receptorRing]) {
     group.traverse((o) => {
@@ -480,6 +475,68 @@ export function makeScene(
   addLabel('street', 'Enterprise Dr', 'street', new THREE.Vector3(-105.3, 1, -74.55));
   const facilityTag = addLabel('facility', 'Data center', 'facility', new THREE.Vector3(0, 20, 0));
   const contour = addLabel('sound-contour', '55 dBA contour', 'contour', new THREE.Vector3());
+  const leaderLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  leaderLayer.classList.add('ds-machine-leaders');
+  leaderLayer.setAttribute('aria-hidden', 'true');
+  overlay.prepend(leaderLayer);
+  const equipmentLabels = [0, 1].map(() => {
+    const tag = document.createElement('span');
+    tag.className = 'ds-machine-tag';
+    tag.hidden = true;
+    const link = document.createElementNS(leaderLayer.namespaceURI, 'g');
+    const stroke = document.createElementNS(leaderLayer.namespaceURI, 'polyline');
+    const dot = document.createElementNS(leaderLayer.namespaceURI, 'circle');
+    dot.setAttribute('r', '3.4');
+    link.append(stroke, dot);
+    leaderLayer.append(link);
+    overlay.append(tag);
+    return { tag, stroke, dot, link };
+  });
+  function layoutEquipment() {
+    const equipment = asset.userData.equipment || [];
+    const show = activeView === 'building' && facilityAnchor.visible && !moving;
+    facilityAnchor.updateWorldMatrix(true, false);
+    const pins = equipment.map(([name, x, y, z]) => {
+      const projected = new THREE.Vector3(x, y, z)
+        .applyMatrix4(facilityAnchor.matrixWorld)
+        .project(camera);
+      return { name, x: ((projected.x + 1) * lastWidth) / 2, y: ((1 - projected.y) * lastHeight) / 2 };
+    });
+    // Divide the drawing by the real equipment positions. This also reverses
+    // the leaders when the user orbits to the opposite side of the model.
+    const left = pins.length === 2 && pins[0].x > pins[1].x ? 1 : 0;
+    for (const [i, item] of equipmentLabels.entries()) {
+      const pin = pins[i];
+      const on =
+        show && pin && pin.x > 3 && pin.x < lastWidth - 3 && pin.y > 9 && pin.y < lastHeight - 6;
+      item.tag.hidden = !on;
+      item.link.style.display = on ? '' : 'none';
+      if (!on) continue;
+      if (item.tag.textContent !== pin.name) item.tag.textContent = pin.name;
+      const isLeft = i === left;
+      const w = item.tag.offsetWidth,
+        h = item.tag.offsetHeight;
+      const dx = lastWidth > 540 ? 65 : 21;
+      const horizontal = i === 0 ? -1 : 1;
+      const tx = THREE.MathUtils.clamp(isLeft ? pin.x - w - dx : pin.x + dx, 9, lastWidth - w - 9);
+      const ty = THREE.MathUtils.clamp(
+        pin.y + horizontal * (lastWidth > 540 ? 46 : 33) - h / 2,
+        16,
+        lastHeight - h - 20
+      );
+      item.tag.style.left = tx + 'px';
+      item.tag.style.top = ty + 'px';
+      const endX = isLeft ? tx + w : tx,
+        endY = ty + h / 2;
+      const elbow = endX + (isLeft ? 11 : -11);
+      item.stroke.setAttribute(
+        'points',
+        pin.x + ',' + pin.y + ' ' + elbow + ',' + endY + ' ' + endX + ',' + endY
+      );
+      item.dot.setAttribute('cx', pin.x);
+      item.dot.setAttribute('cy', pin.y);
+    }
+  }
   const noteLabels = new Map();
   function setNoteLabels(notes) {
     const ids = new Set(notes.map((n) => n.id));
@@ -531,8 +588,9 @@ export function makeScene(
     setDistrictBatches(use ? cropBox : null);
     currentlyCropped = use;
     tile.visible = use;
+    district.userData.plinth.visible = !use;
     drawSurface = cropBox;
-    floor.position.y = use ? -11.8 : -27;
+    floor.position.y = use ? -10.26 : -29.22;
     const target = use
       ? tile.position
       : new THREE.Vector3((BOARD.minX + BOARD.maxX) / 2, 0, (BOARD.minZ + BOARD.maxZ) / 2);
@@ -552,16 +610,27 @@ export function makeScene(
     const narrow = lastWidth / lastHeight < 1.0;
     const aspect = lastWidth / lastHeight,
       vertical = narrow ? span / (aspect + 0.01) : Math.max(span, (span * 1.4) / aspect);
+    // Fit all four corners of the local tabletop on portrait and landscape.
+    // The inspection and plan cameras keep their independent close framings.
+    const vx = framing.site.direction;
+    const horizontal = Math.hypot(vx.x, vx.z);
+    const boardW = (2 * (Math.abs(vx.z) * HALF_TILE_X + Math.abs(vx.x) * HALF_TILE_Z)) / horizontal;
+    const boardH =
+      (2 * vx.y * (Math.abs(vx.x) * HALF_TILE_X + Math.abs(vx.z) * HALF_TILE_Z)) / horizontal + 17;
+    let fit = vertical;
+    if (activeView === 'site') fit = Math.max(vertical, boardW / (aspect * 0.88), boardH / 0.76);
+    else if (activeView === 'building' && narrow) fit = Math.max(fit, 112 / aspect);
     Object.assign(camera, {
-      left: (-vertical * aspect) / 2,
-      right: (vertical * aspect) / 2,
-      top: vertical / 2,
-      bottom: -vertical / 2
+      left: (-fit * aspect) / 2,
+      right: (fit * aspect) / 2,
+      top: fit / 2,
+      bottom: -fit / 2
     });
     camera.updateProjectionMatrix();
     projectionDirty = false;
   }
   function layoutLabels() {
+    layoutEquipment();
     if (facilityAnchor.visible) {
       scratch.copy(facilityAnchor.position);
       scratch.y += 12;
@@ -578,9 +647,14 @@ export function makeScene(
       const p = item.where,
         kind = item.kind;
       let on = within(p, cropBox);
-      if (kind === 'facility') on = on && Boolean(state.point) && (!moving || state.mode === 'note');
+      if (kind === 'facility')
+        on =
+          on &&
+          Boolean(state.point) &&
+          (item.tag.classList.contains('conflict') || (activeView !== 'building' && !moving));
       else if (kind === 'river') on = on && layers.river !== false;
-      else if (kind === 'contour') on = on && currentlyCropped && sound.visible && lastWidth > 490;
+      else if (kind === 'contour')
+        on = on && activeView === 'site' && currentlyCropped && sound.visible && lastWidth > 490;
       else if (kind === 'note') on = on && layers.notes !== false;
       else if (kind === 'street') on = on && currentlyCropped && lastWidth > 450;
       else on = on && layers.places !== false;
@@ -620,7 +694,9 @@ export function makeScene(
     const accepted = [];
     for (const { item, x, y } of visible.sort((a, b) => a.order - b.order)) {
       const width =
-        item.kind === 'facility' ? 88 : Math.min(244, item.tag.textContent.length * 6.1 + 20);
+        item.kind === 'facility'
+          ? item.tag.offsetWidth || Math.min(250, item.tag.textContent.length * 6.4 + 21)
+          : Math.min(244, item.tag.textContent.length * 6.1 + 20);
       const height = item.kind === 'facility' ? 23 : 17;
       const left = THREE.MathUtils.clamp(
           x - width / 2 + (item.kind === 'facility' ? -23 : 0),
@@ -628,14 +704,21 @@ export function makeScene(
           lastWidth - width - 4
         ),
         top = y - height - (item.kind === 'facility' ? 29 : 5);
-      const overlaps = accepted.some(
-        (b) => left < b[2] + 4 && left + width > b[0] - 4 && top < b[3] + 2 && top + height > b[1] - 2
-      );
+      let labelY = top;
+      const intersects = (y) =>
+        accepted.some(
+          (b) => left < b[2] + 4 && left + width > b[0] - 4 && y < b[3] + 2 && y + height > b[1] - 2
+        );
+      if (intersects(labelY) && item.tag.classList.contains('ds-listening')) {
+        labelY = y + 10;
+        if (intersects(labelY)) labelY += height + 5;
+      }
+      const overlaps = intersects(labelY);
       item.tag.hidden = overlaps;
       if (overlaps) continue;
       item.tag.style.left = left + 'px';
-      item.tag.style.top = top + 'px';
-      accepted.push([left, top, left + width, top + height]);
+      item.tag.style.top = labelY + 'px';
+      accepted.push([left, labelY, left + width, labelY + height]);
     }
     labelsDirty = false;
   }
@@ -646,6 +729,21 @@ export function makeScene(
     );
   }
   function setFacility(point) {
+    const result = impact.update(
+      { point, angle: state.angle || 0, design: state.design },
+      {
+        enabled: state.layers?.constraints !== false,
+        receptorId: state.receptorId,
+        lens: state.lens,
+        showRiver: state.layers?.river !== false,
+        showParcel: state.layers?.parcel !== false && state.layers?.site !== false,
+        showSound: state.layers?.sound !== false && state.layers?.noise !== false
+      }
+    );
+    const on = state.layers?.constraints !== false && Boolean(point) && result.items.length > 0;
+    facilityTag.tag.classList.toggle('conflict', on);
+    const title = on ? result.items[0].title : 'Data center';
+    if (facilityTag.tag.textContent !== title) facilityTag.tag.textContent = title;
     if (!point) {
       labelsDirty = true;
       listeningTrace.visible = false;
@@ -726,15 +824,19 @@ export function makeScene(
     const target = name === 'district' ? new THREE.Vector3(120, 0, -100) : point.clone();
     // The inspection tile preserves a strip of the western equipment yard and access road.
     if (name === 'site') {
-      target.x += 52;
-      target.z += 12;
+      target.x += 39;
+      target.z -= 6;
       target.y = 2;
     }
     if (name === 'building') target.y = 6;
     const { direction, span: nextSpan } = framing[name];
     const distance = name === 'district' ? 3100 : 1800;
     const cropped = name === 'site' || name === 'building';
-    setCrop(cropped, target.clone().add(new THREE.Vector3(58, 0, 25)));
+    setCrop(cropped, target);
+    // An orthographic depth range fitted to the model keeps thin grilles, rail
+    // heads and projected fields stable, even on shallow-angle tablet views.
+    const depth = name === 'district' ? 1720 : name === 'plan' ? 800 : 680;
+    camera.userData.depth = depth;
     const end = target.clone().addScaledVector(direction, distance);
     if (immediate || reducedMotion() || !initialized) {
       anim = null;
@@ -776,6 +878,17 @@ export function makeScene(
     if (projectionDirty) updateProjection();
     const changed = controls.update();
     if (changed || anim || labelsDirty) {
+      const focusDistance = camera.position.distanceTo(controls.target);
+      const near = Math.max(0.1, focusDistance - camera.userData.depth);
+      const far = focusDistance + camera.userData.depth;
+      if (
+        Number.isFinite(near) &&
+        (Math.abs(camera.near - near) > 0.05 || Math.abs(camera.far - far) > 0.05)
+      ) {
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+      }
       camera.updateMatrixWorld();
       layoutLabels();
     }

@@ -1,3 +1,5 @@
+import { createSentiment } from './sentiment.js';
+import { evaluateConstraints } from './studio/constraints.js';
 import { site, places, sources } from './geography.js';
 import { analyzePlacement } from './studio/analysis.js';
 import { createReadouts, displayNumber, methodsHTML } from './studio/readouts.js';
@@ -21,16 +23,16 @@ const escapeHTML = (value) =>
 const id = () => crypto.randomUUID();
 const topics = ['Question', 'Suggestion', 'Concern', 'Local knowledge'];
 const designs = {
-  reference: { name: 'Reference design', subtitle: '26 MW facility' },
-  efficient: { name: 'Higher efficiency', subtitle: 'Lower electricity use' },
-  dry: { name: 'Dry cooling', subtitle: 'Lower cooling-water use' }
+  reference: { name: 'Reference design', subtitle: '26 MW reference load' },
+  efficient: { name: 'Higher efficiency', subtitle: '17% less annual electricity' },
+  dry: { name: 'Dry cooling', subtitle: '90% less cooling water' }
 };
 const state = loadWorkspace(site.center);
 const ui = {
   view: 'studio',
   camera: 'site',
   mode: 'explore',
-  layers: { places: true, site: true, river: true, notes: true, sound: true },
+  layers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true },
   selectedNote: null,
   receptorId: 'riel'
 };
@@ -40,6 +42,8 @@ let timer,
   map,
   studio,
   aerial,
+  sentiment,
+  question = 0,
   sceneContains = () => true,
   unavailable = false,
   previousCustom = null,
@@ -123,10 +127,64 @@ function renderControls() {
       b.disabled = noBuild();
       b.setAttribute('aria-pressed', !noBuild() && b.dataset.design === state.design);
     });
+  const detail = {
+    reference: 'The blue rooftop cells and west equipment yard represent the reference cooling layout.',
+    efficient:
+      'Green louvered air intakes illustrate an economizer design. The scenario serves the same computing load with less electricity.',
+    dry: 'Copper fan banks reject heat to outdoor air. The scenario uses less cooling water and slightly more electricity.'
+  };
+  $('design-detail').textContent = noBuild() ? '' : detail[state.design];
   $('design-caption').textContent = noBuild() ? 'No facility on the table' : 'Same computing workload';
 }
 function renderMetrics(point = state.point) {
-  updateReadouts({ ...state, point }, ui.receptorId);
+  const current = { ...state, point };
+  const result = updateReadouts(current, ui.receptorId);
+  const check = evaluateConstraints(current);
+  const hasFinding = check.items.length > 0;
+  const banner = $('siting-check');
+  banner.dataset.status = check.status;
+  banner.textContent = hasFinding
+    ? check.items.map((item) => item.title).join(' · ')
+    : check.status === 'none'
+      ? 'No building placed'
+      : 'No mapped conflict';
+  banner.title = hasFinding
+    ? check.items.map((item) => item.detail).join(' ')
+    : 'Screens the mapped railway, river, roads and selected community land uses.';
+  document
+    .querySelector('.resources')
+    .style.setProperty('--electricity', Math.min(100, (result.energyGWh / 200) * 100) + '%');
+  document
+    .querySelector('.resources')
+    .style.setProperty('--water-demand', Math.min(100, ((result.waterMGal || 0) / 3) * 100) + '%');
+  const inspect = ui.camera === 'building' && point;
+  const questions = [
+    [
+      'Who would hear the equipment?',
+      result.receptorName +
+        ' · ' +
+        displayNumber(result.soundDbA, 1) +
+        ' dBA from the modeled equipment.'
+    ],
+    [
+      'How close is the river?',
+      displayNumber(result.riverSetbackM == null ? null : result.riverSetbackM * 3.28084) +
+        ' ft from the building edge to the mapped river centerline.'
+    ],
+    [
+      'Does the building fit here?',
+      displayNumber(result.parcelCoveragePct) + '% of the footprint lies inside the proposed parcel.'
+    ]
+  ];
+  $('question-step').textContent = inspect
+    ? 'Design inspection'
+    : 'Siting question ' + (question + 1) + ' / 3';
+  $('question-title').textContent = inspect ? designs[state.design].name : questions[question][0];
+  $('question-caption').textContent = inspect
+    ? designs[state.design].subtitle
+    : point
+      ? questions[question][1]
+      : 'Choose a placement to explore this question.';
 }
 function renderDesigns() {
   $('design-choices').innerHTML = Object.entries(designs)
@@ -216,6 +274,7 @@ function drawMap() {
     mode: ui.mode,
     layers: ui.layers,
     selectedNote: ui.selectedNote,
+    lens: ['sound', 'water', 'parcel'][question],
     receptorId: ui.receptorId
   });
   $('modebar').hidden = ui.mode === 'explore';
@@ -227,12 +286,17 @@ function drawMap() {
       '</b><div class="mode-actions"><button data-act="center">Use view center</button><button data-act="cancel-mode">Cancel</button></div>';
 }
 function render() {
+  sentiment?.showNotes(state.notes);
   renderControls();
   renderMetrics();
   drawMap();
 }
 function setMode(mode) {
   if (dialog.open) closeDialog();
+  if (ui.view === 'sentiment') {
+    sentiment?.setNote(mode === 'note');
+    return;
+  }
   ui.mode = mode;
   $('layers-menu').hidden = true;
   $('layers').setAttribute('aria-expanded', 'false');
@@ -240,17 +304,28 @@ function setMode(mode) {
   drawMap();
 }
 function viewControls() {
-  document.querySelectorAll('[data-workview]').forEach((b) => {
-    b.setAttribute('aria-pressed', b.dataset.workview === ui.view);
-    if (b.dataset.workview === 'studio') b.disabled = unavailable;
-  });
+  const listening = ui.view === 'sentiment';
+  document
+    .querySelectorAll('[data-workview]')
+    .forEach((b) =>
+      b.setAttribute('aria-pressed', b.dataset.workview === (listening ? 'sentiment' : 'studio'))
+    );
+  $('workspace-title').textContent = listening
+    ? 'What are people discussing?'
+    : 'Where should the data center go?';
+  document.querySelector('.workbench').hidden = listening;
+  document.querySelector('.analysis').hidden = listening;
+  document.querySelector('.case-actions').hidden = listening;
+  $('sentiment').hidden = !listening;
   document.querySelector('.cam-modes').hidden = ui.view !== 'studio';
   document.querySelector('.aerial-modes').hidden = ui.view !== 'aerial';
   $('map').hidden = ui.view !== 'aerial';
   $('scene').hidden = ui.view !== 'studio';
+  $('question-card').hidden = ui.view !== 'studio';
 }
 function setCamera(view) {
   ui.camera = view;
+  renderMetrics();
   document
     .querySelectorAll('[data-camera]')
     .forEach((b) => b.setAttribute('aria-pressed', b.dataset.camera === view));
@@ -267,15 +342,26 @@ function aerialMap() {
   }));
 }
 function changeView(view, notify = true) {
-  if (view === 'studio' && (unavailable || !studio)) {
-    if (notify)
-      toast(unavailable ? '3D graphics are unavailable in this browser.' : 'Preparing the 3D model.');
+  if (view === 'sentiment') {
+    ui.view = view;
+    ui.mode = 'explore';
+    viewControls();
+    map = undefined;
+    sentiment ??= createSentiment($('sentiment'), {
+      onNote: addNoteAt,
+      onMarker: showNote,
+      onExplore: (point) => {
+        changeView('studio');
+        focusPoint(point);
+      }
+    });
+    sentiment.showNotes(state.notes);
+    sentiment.resize();
     return;
   }
-  if (view === 'studio' && state.point && !sceneContains(state.point)) {
-    if (notify) toast('This placement is outside the 3D district. Explore it on the aerial map.');
-    return;
-  }
+  sentiment?.setNote(false);
+  if (view === 'studio' && (!studio || unavailable || (state.point && !sceneContains(state.point))))
+    view = 'aerial';
   const changed = view !== ui.view;
   ui.view = view;
   ui.mode = 'explore';
@@ -293,6 +379,10 @@ function changeView(view, notify = true) {
   $('layers').setAttribute('aria-expanded', 'false');
 }
 function focusPoint(point) {
+  if (ui.view === 'sentiment') {
+    sentiment?.focus(point);
+    return;
+  }
   if (ui.view === 'studio' && !sceneContains(point)) changeView('aerial', false);
   map?.focus(point);
 }
@@ -427,6 +517,13 @@ function saveOption() {
     '<form id="save-form"><label class="field">Name this placement<input required maxlength="80" name="name" placeholder="e.g. West industrial parcel"></label><p class="hint">Keep its location, rotation and facility design for comparison.</p><div class="dialog-actions"><button type="button" data-act="close">Cancel</button><button class="primary">Save option</button></div></form>'
   );
   const form = $('save-form');
+  const findings = evaluateConstraints(state).items;
+  if (findings.length) {
+    const msg = document.createElement('p');
+    msg.className = 'finding-note';
+    msg.textContent = 'Flagged scenario · ' + findings.map((item) => item.title).join(' · ');
+    form.prepend(msg);
+  }
   form.elements.name.focus();
   form.onsubmit = (e) => {
     e.preventDefault();
@@ -450,6 +547,9 @@ function compare() {
   if (state.active === 'custom') options.push({ name: 'My placement', ...snapshot() });
   const body = options
     .map((o) => {
+      const screened = evaluateConstraints(o);
+      const conflicts =
+        screened.items.map((item) => item.title).join(' · ') || (o.point ? 'No mapped conflict' : '—');
       const a = analyzePlacement(o, { receptorId: ui.receptorId });
       const number = (v, unit, dec = 0) => (v == null ? '—' : displayNumber(v, dec) + ' ' + unit);
       return (
@@ -458,6 +558,8 @@ function compare() {
         '</b><small>' +
         (o.point ? designs[o.design].name : 'No facility') +
         '</small></td><td>' +
+        escapeHTML(conflicts) +
+        '</td><td>' +
         number(a.soundDbA, 'dBA', 1) +
         '</td><td>' +
         number(a.riverSetbackM == null ? null : a.riverSetbackM * 3.28084, 'ft') +
@@ -475,7 +577,7 @@ function compare() {
     'Compare siting options',
     '<p class="hint">Equipment sound is modeled at ' +
       escapeHTML(places.find((p) => p.id === ui.receptorId).name) +
-      '. Resource estimates are annual.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Sound</th><th>River clearance</th><th>Inside parcel</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
+      '. Resource estimates are annual.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Placement check</th><th>Sound</th><th>River clearance</th><th>Inside parcel</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
       body +
       '</tbody></table></div><p class="minor">Save more placements to include them here. No build adds zero water and electricity demand.</p>',
     true
@@ -573,7 +675,8 @@ function toggleLayerMenu() {
   $('layers').setAttribute('aria-expanded', opening);
   if (opening)
     menu.innerHTML = Object.entries({
-      ...(ui.view === 'studio' ? { sound: 'Equipment sound field' } : {}),
+      sound: 'Equipment sound field',
+      constraints: 'Placement conflicts',
       site: 'Proposed parcel',
       river: 'Ecorse River',
       places: 'Community places',
@@ -629,6 +732,7 @@ const actions = {
 function restore(n) {
   const attached = n?.placement;
   if (!attached) return;
+  if (ui.view === 'sentiment') changeView('studio');
   Object.assign(state, {
     ...attached,
     point: attached.point && [...attached.point],
@@ -663,6 +767,43 @@ document.addEventListener('click', (e) => {
   }
   if (b.dataset.workview) {
     changeView(b.dataset.workview);
+    return;
+  }
+  if (b.id === 'prev-question' || b.id === 'next-question') {
+    question = (question + (b.id === 'next-question' ? 1 : 2)) % 3;
+    drawMap();
+    studio?.view(['site', 'district', 'plan'][question]);
+    renderMetrics();
+    return;
+  }
+  if (b.id === 'siting-check') {
+    const report = evaluateConstraints(state);
+    const finding = report.items
+      .map(
+        (item) =>
+          '<section class="method"><h3>' +
+          escapeHTML(item.title) +
+          '</h3><p>' +
+          escapeHTML(item.detail) +
+          '</p></section>'
+      )
+      .join('');
+    showDialog(
+      'Placement check',
+      finding +
+        '<p class="hint">The workshop checks the rotated footprint against the mapped railway, roads, river and selected community uses. Review any location against a survey and a site plan.</p><div class="nudge-row"><button data-example="rail">Try rail crossing</button><button data-example="park">Try park edge</button></div>'
+    );
+    return;
+  }
+  if (b.dataset.example) {
+    const examples = { rail: [42.269787, -83.208061], park: [42.268531, -83.205321] };
+    const p = examples[b.dataset.example];
+    if (!p) return;
+    closeDialog();
+    state.angle = 0;
+    placeAt(p);
+    changeView('studio');
+    focusPoint(p);
     return;
   }
   if (b.dataset.camera) {
@@ -751,6 +892,7 @@ document.addEventListener('input', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !dialog.open) {
+    sentiment?.setNote(false);
     if (!$('layers-menu').hidden) toggleLayerMenu();
     if (ui.mode !== 'explore') setMode('explore');
   }
@@ -781,8 +923,9 @@ function fallback() {
   if (unavailable) return;
   unavailable = true;
   $('loading').hidden = true;
-  changeView('aerial', false);
-  toast('3D graphics are unavailable. The aerial map has the same live analysis.');
+  if (ui.view !== 'sentiment') changeView('aerial', false);
+  if (ui.view !== 'sentiment')
+    toast('Using the plan view for this browser. Drag the footprint to test a placement.');
 }
 render();
 try {
@@ -802,16 +945,18 @@ try {
     },
     onError: fallback
   });
-  if (!unavailable) changeView(state.point && !sceneContains(state.point) ? 'aerial' : ui.view, false);
+  if (!unavailable && ui.view !== 'sentiment')
+    changeView(state.point && !sceneContains(state.point) ? 'aerial' : ui.view, false);
 } catch (error) {
   console.error('DataScope 3D', error);
   fallback();
 }
+if (new URLSearchParams(location.search).get('view') === 'sentiment' && !linked) changeView('sentiment');
 if (linked) {
   store();
   toast('Shared placement opened.');
 }
-if (state.point && state.active !== 'proposal') focusPoint(state.point);
+if (state.point && state.active !== 'proposal' && ui.view !== 'sentiment') focusPoint(state.point);
 
 window.addEventListener('hashchange', () => {
   if (!readLink()) return;

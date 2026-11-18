@@ -1,7 +1,8 @@
 // Original architectural miniatures. Neighborhood massing is generalized from the
 // city planning exhibit for orientation, not a building inventory or engineering plan.
 import * as THREE from 'three';
-import { river, site } from '../geography.js';
+import { site } from '../geography.js';
+import { constraintShapes } from './constraints.js';
 
 export const tableBounds = { minX: -780, maxX: 1020, minZ: -850, maxZ: 650 };
 const metersLat = 111320;
@@ -36,7 +37,16 @@ function modelParts(group) {
   const cylinder = new THREE.CylinderGeometry(0.5, 0.5, 1, 18);
   const torus = new THREE.TorusGeometry(0.445, 0.055, 6, 20);
   torus.rotateX(-Math.PI / 2);
-  const crown = new THREE.IcosahedronGeometry(1, 1);
+  const crown = new THREE.IcosahedronGeometry(1, 0);
+  const taperedStack = new THREE.CylinderGeometry(0.345, 0.5, 1, 24);
+  const wedgeSection = new THREE.Shape();
+  wedgeSection.moveTo(-0.5, -0.5);
+  wedgeSection.lineTo(0.5, 0.5);
+  wedgeSection.lineTo(0.5, -0.5);
+  wedgeSection.closePath();
+  const shed = new THREE.ExtrudeGeometry(wedgeSection, { depth: 1, bevelEnabled: false });
+  shed.translate(0, 0, -0.5);
+  shed.rotateY(-Math.PI / 2);
   const gable = pitchedRoof();
   const stamp = new THREE.Object3D();
   const batches = new Map();
@@ -84,187 +94,297 @@ function modelParts(group) {
     }
     return group;
   }
-  return { box, cyl, ring, tree, roof, stock, finish };
+  return {
+    box,
+    cyl,
+    ring,
+    tree,
+    roof,
+    stock,
+    finish,
+    taper: (...a) => add(taperedStack, ...a),
+    wedge: (...a) => add(shed, ...a)
+  };
 }
 
+// The three architectural studies keep the same working footprint. Their equipment
+// illustrates cooling principles; it is not an inventory from a construction drawing.
+const equipmentKeys = {
+  reference: [
+    ['Cooling tower cells', -3.7, 16.6, -28.5],
+    ['Cooling-water headers', -17.7, 5.05, 7]
+  ],
+  efficient: [
+    ['Air-side economizers', 6, 16.1, -25.5],
+    ['Heat exchanger gallery', -17, 6.2, 14]
+  ],
+  dry: [
+    ['V-bank dry coolers', -7.0, 15.1, -25.2],
+    ['Air-cooled fan array', 11.05, 17.63, 18.07]
+  ]
+};
+const envelopes = {
+  reference: {
+    cladding: '#b9ccd2',
+    frame: '#476477',
+    equipment: '#56869e',
+    trim: '#eaece5',
+    pipe: '#d2a453'
+  },
+  efficient: {
+    cladding: '#afc5b1',
+    frame: '#3f625b',
+    equipment: '#73a591',
+    trim: '#f4f0d8',
+    pipe: '#bf965c'
+  },
+  dry: { cladding: '#c9b4a5', frame: '#775447', equipment: '#ac6949', trim: '#e7e3d7', pipe: '#84aaa6' }
+};
+
 export function createFacility(design = 'reference') {
+  if (!Object.hasOwn(envelopes, design)) design = 'reference';
   const group = new THREE.Group();
   group.name = 'Movable data center';
-  const { box: b, cyl, ring, stock, finish } = modelParts(group);
-  const wall = stock('#d8ded9', 0.68),
-    trim = stock('#eef0df', 0.52, 0.1);
-  const frame = stock('#799396', 0.65, 0.22),
-    metal = stock('#a2b6b5', 0.52, 0.35);
-  const charcoal = stock('#364b53', 0.71, 0.18),
-    duct = stock('#8caaa9', 0.68, 0.21);
-  const roof = stock('#809499', 0.76, 0.09),
-    glass = stock('#29565e', 0.29, 0.35);
-  const band = stock('#79c6be', 0.37, 0.1, '#51a99c'),
-    light = stock('#f3db9f', 0.43, 0.1, '#dcb773');
-  const concrete = stock('#7e8d8b', 0.94),
-    tarmac = stock('#455359', 0.97);
-  const shadow = stock('#24383e', 0.83),
-    grate = stock('#45646d', 0.69, 0.2);
-  const blade = stock('#91a8aa', 0.6, 0.26),
-    darkBlade = stock('#70908f', 0.59, 0.27);
-  // Foundation and the two wings follow the illustrative 46 x 90 m envelope.
-  b(tarmac, 0, 0.16, 0, 46, 0.32, 90);
-  b(concrete, 5, 0.47, -6, 34, 0.62, 71);
-  b(charcoal, 5, 1, -6, 33.4, 1.15, 70.5);
-  b(wall, 5, 5.64, -6, 33.2, 8.85, 70.2);
-  b(charcoal, 5, 10.1, -6, 33.9, 0.5, 71);
-  b(roof, 5, 10.42, -6, 33, 0.37, 70);
-  // Thin light-colored coping makes the roof and parapets read on a tablet.
+  const { box: b, cyl, ring, taper, wedge, stock, finish } = modelParts(group);
+  const colors = envelopes[design];
+  const wall = stock(colors.cladding, 0.77),
+    trim = stock(colors.trim, 0.56, 0.13);
+  const frame = stock(colors.frame, 0.59, 0.21),
+    enamel = stock(colors.equipment, 0.48, 0.24);
+  const gutter = stock('#3b525d', 0.68, 0.14),
+    metal = stock('#b7c8c7', 0.52, 0.34);
+  const pipe = stock(colors.pipe, 0.55, 0.23),
+    rail = stock('#d8c198', 0.55, 0.19);
+  const glass = stock('#264e5b', 0.25, 0.32),
+    litGlass = stock('#8aa9a5', 0.34, 0.24);
+  const warmGlass = stock('#bba982', 0.38, 0.14),
+    blade = stock('#92a6ab', 0.56, 0.24);
+  const dark = stock('#283940', 0.8, 0.12),
+    roof = stock('#808988', 0.86, 0.08);
+  const base = stock('#97a09c', 0.93),
+    apron = stock('#6a7472', 0.94);
+  const stripe = stock('#ece8cf', 0.86),
+    fluorescent = stock('#f4dc9b', 0.41, 0.1, '#aa813c');
+  // A removable pad, masonry plinth and inset low office keep a human scale.
+  b(dark, 0, 0.1, 0, 46, 0.2, 90);
+  b(apron, 0, 0.24, 0, 45.8, 0.14, 89.8);
+  b(base, 5, 0.57, -6, 34.1, 0.55, 71.1);
+  b(frame, 5, 1.55, -6, 33.6, 1.52, 70.5);
+  b(wall, 5, 5.98, -6, 33.15, 7.75, 70.25);
+  b(dark, 5, 9.99, -6, 33.7, 0.36, 70.8);
+  b(roof, 5, 10.22, -6, 33.45, 0.24, 70.6);
   for (const side of [-1, 1]) {
-    b(trim, 5 + side * 16.73, 10.7, -6, 0.42, 0.95, 71);
-    b(trim, 5, 10.7, -6 + side * 35.32, 33.6, 0.95, 0.43);
-    for (let z = -39; z < 28; z += 4.25) {
-      b(frame, 5 + side * 16.64, 5.45, z, 0.14, 7.45, 0.13);
-      b(shadow, 5 + side * 16.68, 8.9, z + 1.7, 0.12, 0.81, 2.94);
+    const x = 5 + side * 16.62;
+    b(frame, x, 9.35, -6, 0.3, 0.64, 70.4);
+    b(trim, x, 10.6, -6, 0.42, 0.8, 70.9);
+    b(trim, 5, 10.6, -6 + side * 35.27, 32.79, 0.8, 0.42);
+    for (let z = -37.9, i = 0; z < 28; z += 6.3, i++) {
+      // Panel joints, over-sailing vertical fins and recessed high clerestory.
+      b(frame, x + side * 0.16, 5.75, z, 0.14, 7.2, 0.13);
+      b(trim, x + side * 0.35, 5.83, z - 0.18, 0.64, 7.42, 0.17);
+      b(glass, x + side * 0.11, 8.42, z + 2.75, 0.12, 0.85, 5.2);
+      b(litGlass, x + side * 0.19, 8.48, z + 1.15, 0.08, 0.67, 1.8);
+      if (i % 2 === 0) {
+        b(dark, x + side * 0.15, 4.33, z + 2.75, 0.14, 2.75, 4.7);
+        for (let k = 0; k < 6; k++)
+          b(metal, x + side * 0.27, 3.17 + k * 0.45, z + 2.75, 0.21, 0.11, 4.48);
+      }
     }
   }
-  // Long cladding joints, intake louvers, roof channels and cross-aisles.
-  for (const x of [-11.65, 21.68])
-    for (const y of [3.25, 5.8, 8.35]) b(frame, x, y, -6, 0.08, 0.075, 70);
-  for (let x = -10.4; x < 21; x += 1.6) b(metal, x, 10.63, -6, 0.16, 0.12, 69);
-  for (let z = -36; z < 24; z += 9) {
-    b(charcoal, -11.73, 4.2, z, 0.14, 3.6, 5.2);
-    for (let i = 0; i < 8; i++) b(metal, -11.88, 2.65 + i * 0.44, z, 0.18, 0.11, 4.9);
+  for (let x = -9.5; x <= 21; x += 1.93) b(metal, x, 10.38, -6, 0.1, 0.1, 69.6);
+  for (let z = -37; z < 29; z += 8.2) b(gutter, 5, 10.39, z, 32.5, 0.06, 0.13);
+  for (const x of [-4, 7.1, 16.5]) {
+    b(dark, x, 3.16, -41.21, 4.2, 4.5, 0.22);
+    for (let y = 1.11; y < 5.45; y += 0.43) b(metal, x, y, -41.36, 3.75, 0.18, 0.11);
+    b(fluorescent, x, 5.79, -41.41, 2.25, 0.23, 0.16);
   }
-  // Glazed low-rise entrance, deep sunshades and separately modeled mullions.
-  b(concrete, 4.4, 0.5, 33.4, 35.2, 0.7, 17);
-  b(glass, 4.4, 4.2, 33.3, 34.4, 6.8, 16.1);
-  b(wall, 4.4, 1.3, 33.3, 34.65, 1.1, 16.35);
-  b(charcoal, 4.4, 7.78, 33.3, 35.15, 0.46, 16.75);
-  b(trim, 4.4, 8.04, 33.3, 35.35, 0.24, 16.95);
-  b(roof, 4.4, 8.18, 33.3, 33.9, 0.1, 15.65);
-  for (const z of [41.4, 25.25]) {
-    for (let x = -11.5; x < 22; x += 2.8) b(metal, x, 4.55, z, 0.16, 5.9, 0.18);
-    for (const y of [3.4, 5.65]) b(metal, 4.35, y, z, 34.3, 0.12, 0.16);
+  // South-facing administrative wing with recessed glazing, irregular warm panes,
+  // laminated sunshades, a deep canopy and a narrow illuminated entrance band.
+  b(base, 4.25, 0.52, 33.8, 35.25, 0.72, 17.4);
+  b(glass, 4.25, 4.05, 33.55, 34.43, 6.47, 16.25);
+  b(wall, 4.25, 1.23, 33.54, 34.63, 0.91, 16.47);
+  for (let x = -11.15, i = 0; x < 21.2; x += 2.77, i++) {
+    b(metal, x, 4.4, 41.77, 0.15, 5.51, 0.2);
+    if (i % 4 !== 1) b(i % 4 === 0 ? warmGlass : litGlass, x + 1.31, 5.77, 41.73, 2.48, 1.58, 0.15);
+    if (i % 3 !== 0) b(enamel, x + 0.05, 5.05, 42.16, 0.15, 3.91, 0.93);
   }
-  for (let z = 26; z < 42; z += 2.7) b(metal, -12.95, 4.55, z, 0.2, 6.05, 0.14);
-  b(trim, -3.1, 4.25, 42.49, 12.6, 0.34, 4.45);
-  for (const x of [-8.95, 2.67]) b(frame, x, 2.05, 44.05, 0.22, 4.1, 0.22);
-  b(band, 4.3, 6.95, 41.49, 32.8, 0.2, 0.17);
-  b(light, -4.3, 3.55, 41.53, 6.2, 0.19, 0.15);
-  // Mechanical skids. Fan disks, rings, blades, grilles and hubs have depth
-  // for close inspection; the real equipment selection is project-specific.
-  function fan(x, y, z, d) {
-    cyl(shadow, x, y, z, d, 0.17, d);
-    ring(metal, x, y + 0.13, z, d, 1, d);
-    for (let i = 0; i < 6; i++) {
-      const a = ((i * 60 + 18) * Math.PI) / 180;
+  for (let z = 26.3; z < 41.3; z += 2.8) {
+    b(metal, -13.03, 4.45, z, 0.16, 5.46, 0.16);
+    b(litGlass, -13.01, 5.8, z + 1.32, 0.16, 1.55, 2.53);
+  }
+  b(frame, 4.25, 7.28, 33.55, 35.12, 0.52, 16.97);
+  b(trim, 4.25, 7.61, 33.55, 35.4, 0.29, 17.28);
+  b(roof, 4.25, 7.8, 33.55, 34.72, 0.12, 16.65);
+  // Low daylight monitors bring a different scale to the public-facing wing.
+  for (const x of [-4.35, 9.2]) {
+    b(frame, x, 8.03, 34.42, 7.75, 0.29, 4.4);
+    wedge(metal, x, 8.62, 34.42, 7.36, 0.83, 4.05);
+    const tilt = -Math.atan(0.83 / 4.05);
+    b(glass, x, 8.74, 34.42, 7.44, 0.11, 4.18, 0, tilt);
+    for (const dx of [-2.46, 0, 2.46]) b(litGlass, x + dx, 8.82, 34.42, 2.22, 0.055, 3.87, 0, tilt);
+    b(trim, x, 9.18, 36.49, 7.65, 0.14, 0.22);
+  }
+  for (const side of [-1, 1]) b(trim, 4.25 + side * 17.3, 7.97, 33.55, 0.22, 0.44, 16.89);
+  for (let x = -11.1; x < 20; x += 3.16) b(metal, x, 7.88, 33.55, 0.09, 0.08, 16.25);
+  b(metal, 4.25, 5.03, 41.84, 34.38, 0.12, 0.19);
+  b(enamel, -4.43, 4.24, 42.91, 13.11, 0.26, 3.94);
+  b(trim, -4.43, 4.42, 42.91, 13.36, 0.16, 4.08);
+  for (const x of [-10.42, 1.56]) b(frame, x, 2.26, 44.4, 0.24, 3.83, 0.24);
+  b(fluorescent, -4.35, 3.46, 41.9, 6.25, 0.18, 0.16);
+
+  function fan(x, y, z, diameter) {
+    cyl(dark, x, y, z, diameter, 0.15, diameter);
+    ring(metal, x, y + 0.17, z, diameter, 0.94, diameter);
+    for (let i = 0; i < 7; i++) {
+      const a = i * ((Math.PI * 2) / 7) + 0.31;
       b(
-        i % 2 ? blade : darkBlade,
-        x + Math.sin(a) * d * 0.18,
-        y + 0.12,
-        z + Math.cos(a) * d * 0.18,
-        d * 0.135,
+        blade,
+        x + Math.sin(a) * diameter * 0.22,
+        y + 0.105,
+        z + Math.cos(a) * diameter * 0.22,
+        diameter * 0.14,
         0.12,
-        d * 0.32,
-        a + 0.47
+        diameter * 0.333,
+        a + 0.54
       );
     }
-    cyl(metal, x, y + 0.2, z, d * 0.18, 0.2, d * 0.18);
+    cyl(trim, x, y + 0.22, z, diameter * 0.16, 0.2, diameter * 0.16);
   }
-  const rows = design === 'dry' ? 5 : 4;
-  for (let row = 0; row < rows; row++) {
-    const z = -33.6 + row * (54 / (rows - 1));
-    for (const x of [-0.8, 11.2]) {
-      const len = design === 'dry' ? 9.4 : 8.8;
-      b(charcoal, x, 10.93, z, 6.4, 0.54, len - 0.2);
-      b(metal, x, 12.05, z, 6.36, 1.9, len);
-      for (const offset of [-1, 1]) {
-        b(grate, x + offset * 3.21, 12.03, z, 0.11, 1.35, len - 0.5);
-        for (let j = 0; j < 4; j++)
-          b(duct, x + offset * 3.3, 11.48 + j * 0.36, z, 0.14, 0.1, len - 0.48);
+  function pipeZ(mat, x, y, z, size, length) {
+    cyl(mat, x, y, z, size, length, size, 0, Math.PI / 2);
+  }
+  function railZ(x, y, z, len, tint = rail) {
+    for (let k = -len / 2; k <= len / 2; k += 3) b(frame, x, y + 0.6, z + k, 0.12, 1.2, 0.12);
+    for (const h of [0.55, 1.23]) b(tint, x, y + h, z, 0.13, 0.12, len);
+  }
+  // The west-side yard is part of all three design studies.
+  b(base, -17.35, 0.48, -6, 10.15, 0.35, 69.35);
+  for (const z of [-37, -18, 1, 20]) {
+    for (let x = -20.8; x < -14; x += 1.02) b(stripe, x, 0.67, z, 0.37, 0.04, 2, 0.52);
+  }
+  for (let z = -39; z < 28; z += 3.7) b(frame, -22.15, 1.42, z, 0.22, 2.26, 0.22);
+  for (const h of [0.9, 1.36, 1.85, 2.35]) b(metal, -22.15, h, -6, 0.18, 0.13, 66.4);
+
+  if (design === 'reference') {
+    // Banked evaporative cooling cells. The sloping fan stacks and blue casings
+    // give the reference facility a recognizable, stepped roof profile.
+    for (const x of [-3.7, 11.0]) {
+      for (const z of [-28.5, -11.7, 5.1, 19.0]) {
+        b(dark, x, 10.72, z, 8.6, 0.63, 9.6);
+        b(enamel, x, 12.5, z, 8.75, 3.2, 9.35);
+        for (const s of [-1, 1]) {
+          b(dark, x + s * 4.42, 12.48, z, 0.14, 2.39, 8.48);
+          for (let n = 0; n < 5; n++) b(metal, x + s * 4.52, 11.5 + n * 0.47, z, 0.21, 0.15, 8.26);
+        }
+        b(trim, x, 14.2, z, 9.05, 0.27, 9.65);
+        taper(trim, x, 15.08, z, 7.8, 1.63, 7.8);
+        cyl(enamel, x, 16.02, z, 5.36, 0.43, 5.36);
+        fan(x, 16.3, z, 4.85);
       }
-      b(trim, x, 13.08, z, 6.54, 0.21, len + 0.14);
-      for (const dz of [-2.18, 2.18]) fan(x, 13.26, z + dz, 3.73);
     }
-  }
-  for (const x of [3.2, 4.05]) {
-    b(duct, x, 11.2, -6, 0.46, 0.55, 62);
-    for (let z = -34; z < 24; z += 12) b(charcoal, x, 10.94, z, 0.78, 0.49, 0.7);
-  }
-  // Screened mechanical yard on the west side; the administrative wing
-  // faces the public approach. Security or internal operations are not modeled.
-  b(concrete, -17.4, 0.36, -5.7, 10, 0.42, 68.9);
-  for (let i = 0; i < 6; i++) {
-    const z = -33 + i * 10.2;
-    b(charcoal, -17.0, 0.95, z, 5.9, 0.8, 6.7);
-    b(wall, -17, 2.6, z, 5.55, 2.95, 6.3);
-    b(roof, -17, 4.25, z, 5.8, 0.35, 6.55);
-    b(grate, -19.84, 2.51, z, 0.12, 1.86, 5);
-    fan(-17, 4.5, z, 3.26);
-    b(duct, -13.1, 2.4, z + 0.3, 2.1, 0.65, 0.85);
-  }
-  for (const z of [-39, 27.4]) b(frame, -17.4, 2.46, z, 10.3, 4.1, 0.31);
-  for (let z = -38; z < 28; z += 2.54) b(frame, -22.42, 2.5, z, 0.21, 4.26, 0.24);
-  for (let i = 0; i < 7; i++) b(duct, -22.48, 0.87 + i * 0.55, -5.8, 0.16, 0.31, 66.4);
-  b(metal, -22.42, 4.58, -5.75, 0.4, 0.2, 66.8);
-  for (let x = -10.5; x < 21; x += 5.1) {
-    b(frame, x, 5.4, -41.22, 0.17, 8.26, 0.21);
-  }
-  for (const x of [-3, 7, 16]) {
-    b(shadow, x, 3.1, -41.31, 4.2, 4.6, 0.15);
-    for (let y = 1.2; y < 5.4; y += 0.43) b(metal, x, y, -41.45, 3.83, 0.18, 0.12);
-    b(light, x, 5.72, -41.53, 1.54, 0.16, 0.25);
-  }
-  // Entrance paving, bollards and a parked service vehicle communicate
-  // the building's human scale on the close-up physical model.
-  b(concrete, -3.4, 0.4, 42.8, 13.3, 0.24, 3.9);
-  for (let z = 41.2; z < 45; z += 1.22) b(frame, -3.5, 0.526, z, 13.0, 0.018, 0.04);
-  for (let x = -9.5; x < 3.2; x += 1.6) b(frame, x, 0.527, 42.85, 0.035, 0.018, 3.62);
-  for (const x of [-8.3, -6.7, 1.1]) {
-    cyl(charcoal, x, 0.84, 44.4, 0.22, 0.9, 0.22);
-    cyl(light, x, 1.19, 44.4, 0.24, 0.12, 0.24);
-  }
-  for (const [x, z] of [
-    [-17.5, 35],
-    [-17.5, 40.2]
-  ]) {
-    b(shadow, x, 0.64, z, 4.2, 0.5, 1.68);
-    b(wall, x, 1.24, z, 4.4, 0.9, 1.78);
-    b(glass, x + 0.38, 1.91, z, 2.12, 0.58, 1.63);
-    b(metal, x + 0.35, 2.24, z, 2.05, 0.13, 1.65);
-    for (const xx of [-1.38, 1.38])
-      for (const zz of [-0.81, 0.81])
-        cyl(shadow, x + xx, 0.74, z + zz, 0.57, 0.18, 0.57, 0, Math.PI / 2);
-  }
-  // Concrete wheel stops and painted walking route make scale legible.
-  for (let z = 29; z < 42; z += 2.6) {
-    b(trim, -18.1, 0.35, z, 6.6, 0.045, 0.1);
-    b(concrete, -21.1, 0.57, z + 1.14, 0.45, 0.42, 1.55);
-  }
-  for (let x = 6; x < 18; x += 1.4) b(trim, x, 0.36, 43.1, 0.6, 0.05, 3);
-  if (design === 'efficient') {
-    // Compact illustrative heat exchangers serving the high-efficiency variant.
-    for (const x of [-5.4, 5.1, 15.6]) {
-      b(charcoal, x, 8.56, 33.4, 6.6, 0.55, 9);
-      b(duct, x, 9.49, 33.4, 6.2, 1.55, 8.6);
-      for (let z = 29.9; z < 37.5; z += 0.7) b(grate, x, 10.35, z, 5.8, 0.18, 0.38);
-      for (const dx of [-2.6, 2.6]) b(band, x + dx, 10.36, 33.4, 0.22, 0.18, 8.4);
-      b(duct, x, 8.76, 27.9, 1.25, 0.92, 3.4);
+    b(gutter, 3.2, 10.81, -7, 3.7, 0.66, 60);
+    for (const x of [2.6, 3.9]) pipeZ(pipe, x, 11.39, -7, 0.74, 60);
+    for (let z = -35; z < 23; z += 7) b(trim, 3.24, 11.91, z, 2.44, 0.14, 0.23);
+    for (const z of [-29, -10, 9]) {
+      b(frame, -17.4, 1.43, z, 7.3, 1.4, 12.3);
+      for (const x of [-19.1, -15.7]) {
+        cyl(enamel, x, 3.86, z, 2.73, 3.8, 2.73);
+        cyl(trim, x, 5.8, z, 2.91, 0.22, 2.91);
+        ring(metal, x, 2.63, z, 2.93, 1.2, 2.93);
+      }
     }
-  }
-  if (design === 'dry') {
-    // V-bank dry coolers have visibly angled fin elements alongside the fans.
-    for (const x of [-0.8, 11.2])
-      for (let row = 0; row < 5; row++) {
-        const z = -33.6 + row * 13.5;
+    for (const x of [-17.9, -16.7]) pipeZ(pipe, x, 5.04, -7.5, 0.55, 58);
+  } else if (design === 'efficient') {
+    // North-light style economizer housings. The high intake face, fixed blades,
+    // and sloping enamel roof are modeled as an original workshop illustration.
+    for (const z of [-29, -11.1, 6.8, 20.3]) {
+      const depth = z > 18 ? 8.5 : 12.4;
+      b(gutter, 5, 10.76, z, 29.0, 0.6, depth + 0.75);
+      wedge(enamel, 5, 13.51, z, 28.35, 5.1, depth);
+      const topZ = z + depth / 2;
+      b(glass, 5, 13.6, topZ, 27.86, 4.48, 0.22);
+      for (let n = 0; n < 6; n++) b(trim, 5, 11.54 + n * 0.72, topZ + 0.36, 28.6, 0.19, 0.78, 0, -0.22);
+      for (const x of [-8.93, -2.02, 5, 12.1, 19]) b(frame, x, 13.62, topZ + 0.29, 0.24, 4.88, 0.61);
+      const slope = -Math.atan(5.1 / depth);
+      b(enamel, 5, 13.72, z, 28.8, 0.2, Math.hypot(depth, 5.1), 0, slope);
+      for (let x = -8.6; x < 19.5; x += 2.32)
+        b(trim, x, 13.91, z, 0.105, 0.12, Math.hypot(depth, 5.1), 0, slope);
+      b(trim, 5, 16.21, topZ, 29, 0.21, 0.57);
+    }
+    for (const z of [-27, -6.4, 14]) {
+      b(frame, -17.35, 1.06, z, 7.8, 0.73, 15.4);
+      b(enamel, -17.35, 3.53, z, 7.15, 4.55, 14.7);
+      b(trim, -17.35, 5.91, z, 7.52, 0.31, 15.1);
+      for (let k = 0; k < 3; k++) {
+        const q = z - 4.8 + k * 4.8;
+        b(glass, -20.99, 3.66, q, 0.15, 3.29, 4.19);
+        for (let j = 0; j < 4; j++) b(metal, -21.12, 2.33 + j * 0.73, q, 0.2, 0.12, 4.02);
+        b(gutter, -17.35, 6.15, q, 4.8, 0.22, 2.37);
+      }
+    }
+    railZ(-12.8, 0.72, -7.6, 61);
+  } else {
+    // Open trusses carry two long rows of A-frame dry coolers. Paired fin banks
+    // are visibly angled and bounded by painted steel uprights at each interval.
+    for (const x of [-3.22, 11.05]) {
+      for (const dx of [-5.4, 5.4]) {
+        b(frame, x + dx, 12.3, -6, 0.33, 0.58, 64.6);
+        for (let z = -36; z <= 26; z += 7.3) b(frame, x + dx, 11.42, z, 0.28, 2.04, 0.31);
+      }
+      for (const z of [-28.6, -7.6, 13.4]) {
+        b(dark, x, 12.58, z, 2.6, 0.35, 18.9);
         for (const sign of [-1, 1]) {
-          b(grate, x + sign * 3.06, 12.03, z, 0.28, 2.05, 8.85, 0, 0, -sign * 0.38);
-          for (let zz = -4.1; zz < 4.2; zz += 0.55)
-            b(metal, x + sign * 3.18, 12.03, z + zz, 0.16, 2.06, 0.08, 0, 0, -sign * 0.38);
+          // Outer edges slope out from the central lower manifold to a wide upper deck.
+          const xx = x + sign * 3.22;
+          b(enamel, xx, 14.5, z, 0.44, 5.87, 19.3, 0, 0, -sign * 0.87);
+          for (let q = -9.0; q <= 9.1; q += 0.64)
+            b(pipe, xx + sign * 0.21, 14.52, z + q, 0.16, 5.68, 0.1, 0, 0, -sign * 0.87);
+          for (const q of [-9.45, 0, 9.45])
+            b(trim, xx + sign * 0.26, 14.52, z + q, 0.29, 5.94, 0.3, 0, 0, -sign * 0.87);
+          b(trim, x + sign * 5.53, 16.64, z, 0.43, 0.47, 19.65);
+        }
+        b(frame, x, 16.51, z, 11.12, 0.57, 19.4);
+        for (const offset of [-4.67, 4.67]) {
+          cyl(enamel, x, 16.99, z + offset, 8.62, 0.62, 8.62);
+          fan(x, 17.37, z + offset, 7.82);
         }
       }
+    }
+    for (let z = -32; z < 21; z += 13.5) {
+      b(frame, -17.4, 1.12, z, 6.8, 0.88, 8.3);
+      for (const x of [-19, -15.85]) {
+        pipeZ(enamel, x, 2.74, z, 2.43, 7.6);
+        for (const q of [-2.6, 2.6]) b(trim, x, 1.65, z + q, 2.67, 0.35, 0.33);
+      }
+      b(pipe, -17.5, 3.08, z + 4.39, 5.6, 0.76, 0.61);
+    }
   }
+  // A paved entry court, service vehicle and roof access walkway establish scale.
+  b(base, -4.2, 0.4, 42.8, 14.2, 0.17, 4.1);
+  for (let x = -10.8; x < 3.2; x += 1.62) b(apron, x, 0.493, 42.79, 0.045, 0.019, 3.97);
+  for (const x of [-9.4, -7.75, 1.1]) {
+    cyl(frame, x, 0.98, 44.25, 0.24, 1.0, 0.24);
+    cyl(fluorescent, x, 1.36, 44.25, 0.26, 0.12, 0.26);
+  }
+  for (let z = 28.8; z < 44; z += 2.75) {
+    b(stripe, -17.74, 0.33, z, 7.28, 0.035, 0.1);
+    b(base, -21.0, 0.54, z + 1.35, 0.49, 0.38, 1.73);
+  }
+  const x = -17.1,
+    z = 37.86;
+  b(dark, x, 0.66, z, 4.65, 0.52, 1.8);
+  b(trim, x, 1.24, z, 4.76, 0.85, 1.86);
+  b(glass, x + 0.33, 1.92, z, 2.74, 0.64, 1.71);
+  b(trim, x + 0.32, 2.29, z, 2.61, 0.14, 1.74);
+  for (const dx of [-1.47, 1.48])
+    for (const dz of [-0.88, 0.88]) cyl(dark, x + dx, 0.75, z + dz, 0.69, 0.19, 0.69, 0, Math.PI / 2);
+  for (let x = 6.3; x < 18; x += 1.47) b(stripe, x, 0.34, 43.21, 0.58, 0.045, 3);
   group.userData.illustrative = true;
+  group.userData.equipment = equipmentKeys[design];
   return finish();
 }
 
-export function createDistrict() {
+export function createDistrict({ print = false } = {}) {
   const group = new THREE.Group();
   group.name = 'Generalized Allen Park architectural study';
   group.userData.bounds = tableBounds;
@@ -301,7 +421,7 @@ export function createDistrict() {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  ctx.fillStyle = '#576663';
+  ctx.fillStyle = '#c2c1aa';
   ctx.fillRect(minX, minZ, districtWidth, districtDepth);
   function disk(x, z, r, color) {
     ctx.fillStyle = color;
@@ -309,34 +429,32 @@ export function createDistrict() {
     ctx.arc(x, z, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Printed surface grain and broad land-use washes make flat local terrain legible.
-  for (let i = 0; i < 580; i++) {
-    const x = minX + random() * districtWidth,
-      z = minZ + random() * districtDepth;
-    disk(x, z, 8 + random() * 73, random() > 0.45 ? 'rgba(146,167,139,.04)' : 'rgba(29,48,48,.045)');
-  }
-  const pine = stock('#556d5a', 0.98),
-    moss = stock('#74866c', 0.99),
-    sage = stock('#899980', 0.99);
-  const leaf = stock('#697f68', 0.97),
-    trunk = stock('#756b56', 0.99);
-  const walls = ['#b4b7a5', '#bdbfaf', '#b0afa1', '#a2acaa'].map((c) => stock(c, 0.95));
-  const roofs = ['#818b87', '#8c948b', '#92978f', '#798482'].map((c) => stock(c, 0.91));
+  const pine = stock('#517969', 0.98),
+    moss = stock('#91a77b', 0.99),
+    sage = stock('#adba85', 0.99);
+  const leaf = stock('#729578', 0.97),
+    trunk = stock('#7e725b', 0.99);
+  const walls = ['#c9cbb4', '#dfc9aa', '#c4baa4', '#aabcb6'].map((c) => stock(c, 0.95));
+  const roofs = ['#798f8c', '#8b9c93', '#a2917e', '#6d8182'].map((c) => stock(c, 0.91));
   const steel = stock('#8e9c9c', 0.7, 0.14),
     concrete = stock('#a1aaa4', 0.95),
     slab = stock('#788680', 0.93);
   const ink = stock('#36494c', 0.83),
     cream = stock('#b7bbae', 0.9);
-  const plinthSide = stock('#283436', 0.76),
-    plinthBase = stock('#1f292c', 0.7, 0.18),
-    fin = stock('#647774', 0.68, 0.18);
   const corner = (minX + maxX) / 2,
     mid = (minZ + maxZ) / 2;
-  b(plinthBase, corner, -24, mid, districtWidth - 8, 9, districtDepth - 8);
-  b(fin, corner, -18.4, mid, districtWidth - 2, 2.2, districtDepth - 2);
-  b(plinthSide, corner, -8.8, mid, districtWidth, 17.4, districtDepth);
+  const plinth = new THREE.Group();
+  if (!print) {
+    const edge = modelParts(plinth);
+    edge.box(edge.stock('#718480'), corner, -23, mid, districtWidth - 8, 8, districtDepth - 8);
+    edge.box(edge.stock('#c2bba0'), corner, -18, mid, districtWidth - 2, 2, districtDepth - 2);
+    edge.box(edge.stock('#a5a28d'), corner, -8.55, mid, districtWidth, 16.9, districtDepth);
+    edge.finish();
+    group.add(plinth);
+  }
+  group.userData.plinth = plinth;
 
-  const riverLine = river.map(geo);
+  const riverLine = constraintShapes.river;
   const parcel = site.boundary.map(geo);
   const roads = [];
   function corridor(points, width, arterial = false) {
@@ -361,15 +479,6 @@ export function createDistrict() {
     return yes;
   }
   // The table axes come from north-up published plan and the municipal study map.
-  const freewayNorth = [
-    [-135, 467],
-    [42, 357],
-    [151, 289],
-    [245, 221],
-    [324, 136],
-    [404, 36],
-    [469, -65]
-  ].map(feature);
   function shiftPath(points, offset) {
     return points.map((p, i) => {
       const a = points[Math.max(0, i - 1)],
@@ -380,37 +489,11 @@ export function createDistrict() {
       return [p[0] - (dz / l) * offset, p[1] + (dx / l) * offset];
     });
   }
-  const freeway = shiftPath(freewayNorth, 4);
+  const freeway = constraintShapes.freeway;
   // Rail alignments bracket the triangle and join to the northeast.
-  const railwayNorth = [
-    [-180, 476],
-    [23, 404],
-    [148, 364],
-    [274, 329],
-    [391, 296],
-    [589, 237],
-    [803, 165],
-    [994, 102]
-  ].map(feature);
-  const railwayEast = [
-    [142, 728],
-    [230, 570],
-    [309, 434],
-    [391, 296],
-    [440, 218],
-    [487, 133],
-    [524, 24],
-    [557, -80]
-  ].map(feature);
-  const enterprise = [
-    [-67, 774],
-    [66, 634],
-    [155, 508],
-    [184, 462],
-    [207, 411],
-    [239, 355],
-    [247, 347]
-  ].map(feature);
+  const railwayNorth = constraintShapes.railNorth;
+  const railwayEast = constraintShapes.railEast;
+  const enterprise = constraintShapes.enterprise;
   corridor(enterprise, 9, true);
   const north = feature([454, 325]);
   const cos = 0.856,
@@ -420,105 +503,58 @@ export function createDistrict() {
   }
   const blockAngle = -Math.atan2(sin, cos);
   const districtBlock = [block(-26, -9), block(886, -9), block(886, 1288), block(-24, 1288)];
-  fill(districtBlock, '#657069');
-  const parkPlane = [
-    feature([394, 345]),
-    feature([441, 317]),
-    feature([408, 382]),
-    feature([365, 455]),
-    feature([332, 453]),
-    feature([352, 416])
-  ];
-  fill(parkPlane, '#72866c');
-  line(parcel, '#7b8b72', 5);
-  fill(parcel, '#77876d');
-  // A procedural, printed meadow surface: broad scoured earth, grass tufts,
-  // small patches of bare soil and a finer scale of blade and fiber texture.
-  // It suggests surface type only. It does not represent surveyed elevations.
-  function lattice(ix, iz) {
-    let h = Math.imul(ix + 10193, 1973) ^ Math.imul(iz - 2771, 9277);
-    h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-  }
-  function noise(x, z, scale) {
-    const X = x / scale,
-      Z = z / scale,
-      i = Math.floor(X),
-      k = Math.floor(Z);
-    let s = X - i,
-      t = Z - k;
-    s = s * s * (3 - 2 * s);
-    t = t * t * (3 - 2 * t);
-    return (
-      (1 - s) * ((1 - t) * lattice(i, k) + t * lattice(i, k + 1)) +
-      s * ((1 - t) * lattice(i + 1, k) + t * lattice(i + 1, k + 1))
-    );
-  }
-  function printMeadow() {
-    const swatch = document.createElement('canvas');
-    swatch.width = 790;
-    swatch.height = 738;
-    const brush = swatch.getContext('2d');
-    const bitmap = brush.createImageData(swatch.width, swatch.height);
-    const a = bitmap.data;
-    for (let iz = 0; iz < swatch.height; iz++)
-      for (let ix = 0; ix < swatch.width; ix++) {
-        const x = -250 + ix * 0.62,
-          z = -216 + iz * 0.62;
-        const grain = noise(x, z, 1.8),
-          m = noise(x * 0.95 + z * 0.28, z * 0.82 - x * 0.5, 24),
-          soil = noise(x, z, 64);
-        const f = noise(x * 0.7 - z * 0.3, z * 1.9, 7);
-        const variation = (soil - 0.5) * 31 + (m - 0.5) * 21 + (f - 0.5) * 18 + (grain - 0.5) * 12;
-        const ochre = Math.max(0, (m * 0.6 + soil * 0.4 - 0.51) * 80);
-        const i = (iz * swatch.width + ix) * 4;
-        a[i] = 105 + variation + ochre;
-        a[i + 1] = 123 + variation + ochre * 0.15;
-        a[i + 2] = 99 + variation - ochre * 0.49;
-        a[i + 3] = 255;
-      }
-    brush.putImageData(bitmap, 0, 0);
-    ctx.save();
-    path(parcel, true);
-    ctx.clip();
-    ctx.drawImage(swatch, -250, -216, swatch.width * 0.62, swatch.height * 0.62);
-    const herbs = seeded(14521);
-    for (let i = 0; i < 16500; i++) {
-      const x = -239 + herbs() * 469,
-        z = -212 + herbs() * 430;
-      const r = herbs();
+  fill(districtBlock, '#b7bd9e');
+  const parkPlane = constraintShapes.park;
+  fill(parkPlane, '#aac293');
+  line(parcel, '#a8a17f', 5);
+  fill(parcel, '#d4cfad');
+  // Topographic paper with a restrained stipple, slight textural variation and
+  // a thin edge around the undeveloped parcel. Neutral tones leave room for
+  // the analytical overlays. The site path is traced from the city exhibit.
+  const noise = (x, z, scale) =>
+    0.5 +
+    0.23 * Math.sin(x / scale + Math.cos(z / scale)) +
+    0.15 * Math.cos(z / scale + Math.sin((0.6 * x) / scale));
+  ctx.save();
+  path(parcel, true);
+  ctx.clip();
+  ctx.fillStyle = '#d4cfad';
+  ctx.fillRect(-490, -480, 980, 960);
+  const herbs = seeded(14521);
+  for (let i = 0; i < 5800; i++) {
+    const x = -239 + herbs() * 469,
+      z = -212 + herbs() * 430;
+    const r = herbs();
+    if (noise(x, z, 17) > 0.54)
       line(
         [
           [x, z],
-          [x + 0.42 + r * 0.65, z - 0.12 - r * 0.4]
+          [x + 0.55 + r * 0.6, z - 0.25]
         ],
-        r > 0.54 ? 'rgba(195,185,135,.36)' : 'rgba(52,78,61,.28)',
-        0.35 + r * 0.25
+        'rgba(116,123,86,.24)',
+        0.31
       );
-    }
-    // The curving worn track at the southern tip is visible in the city's photo.
-    const swale = [
-      [275, 439],
-      [279, 432],
-      [285, 422],
-      [290, 419],
-      [295, 421],
-      [295, 425],
-      [290, 437],
-      [284, 445]
-    ].map(feature);
-    line(swale, '#869578', 6.6);
-    line(swale, '#a5a48b', 2.9);
-    ctx.restore();
   }
-  printMeadow();
+  const swale = [
+    [275, 439],
+    [279, 432],
+    [285, 422],
+    [290, 419],
+    [295, 421],
+    [295, 425],
+    [290, 437],
+    [284, 445]
+  ].map(feature);
+  line(swale, '#c1b998', 5);
+  line(swale, '#ddd1b0', 2.2);
+  ctx.restore();
 
   // Existing river corridor vegetation is stylized; keep a clean water channel.
-  line(riverLine, '#556f62', 59);
-  line(riverLine, '#697d69', 35);
-  line(riverLine, '#7f9587', 22);
-  line(riverLine, '#518489', 16);
-  line(shiftPath(riverLine, 5), '#73999a', 1.2);
+  line(riverLine, '#9cba9a', 59);
+  line(riverLine, '#b1c6a4', 35);
+  line(riverLine, '#d7d2ab', 22);
+  line(riverLine, '#6faba8', 16);
+  line(shiftPath(riverLine, 5), '#a7d4c7', 1.2);
   for (let i = 0; i < 9; i++) {
     const v = i * 74;
     corridor([block(-4, v), block(1100, v)], 6.5);
@@ -544,7 +580,7 @@ export function createDistrict() {
     feature([71, 241]),
     feature([-100, 344])
   ];
-  fill(westMask, '#646f65');
+  fill(westMask, '#b2b89d');
   for (let u = 0; u < 1180; u += 165) {
     const pts = [west(u, -900), west(u, 470)]; // clip against the neighborhood polygon when painted
     roads.push({ points: pts, width: 7, mask: westMask });
@@ -566,7 +602,7 @@ export function createDistrict() {
       h = 3.7 + random() * 1.8;
     const mat = walls[Math.floor(random() * walls.length)],
       top = roofs[Math.floor(random() * roofs.length)];
-    lot(x, z, w + 2, d + 2, angle, '#647068');
+    lot(x, z, w + 2, d + 2, angle, '#aeb29a');
     b(mat, x, h / 2 + 0.1, z, w, h, d, angle);
     gable(top, x, h + 0.05, z, w + 0.7, 1.9 + random() * 0.9, d + 0.7, angle);
     // Street-facing front doors, inset sash windows and porch in the detailed
@@ -591,7 +627,13 @@ export function createDistrict() {
   function canopy(x, z, r, style) {
     if (!inside(x, z, r)) return;
     const m = style || [pine, leaf, moss, sage][Math.floor(random() * 4)];
-    const h = 2.5 + r * 0.66;
+    const h = 2.15 + r * 0.55;
+    const form = random();
+    if (form < 0.31) {
+      cyl(trunk, x, h * 0.62, z, 0.49 + r * 0.12, h * 1.22, 0.49 + r * 0.12);
+      tree(m, x, h + r * 0.71, z, r * 0.75, r * 1.38, r * 0.7, random() * 6.28);
+      return;
+    }
     cyl(trunk, x, h * 0.49, z, 0.55 + r * 0.1, h, 0.55 + r * 0.1);
     tree(m, x, h + r * 0.56, z, r * 1.05, r * (0.92 + random() * 0.38), r, random() * 6.28);
     if (r > 4.6)
@@ -615,7 +657,7 @@ export function createDistrict() {
             if (random() < 0.72) canopy(tx, tz, 2.5 + random() * 2.2);
             const a = convert(u - 5, y - sign * 4),
               e = convert(u - 5, v);
-            line([a, e], '#92a095', 2.2);
+            line([a, e], '#cecfb7', 2.2);
           }
       }
   }
@@ -641,7 +683,7 @@ export function createDistrict() {
     function local(a, q) {
       return [x + a * c + q * s, z - a * s + q * c];
     }
-    lot(x, z, w + 29, d + 30, angle, '#7a8079');
+    lot(x, z, w + 29, d + 30, angle, '#b3b1a0');
     b(slab, x, 0.35, z, w + 2, 0.7, d + 2, angle);
     b(tint, x, h / 2 + 0.71, z, w, h, d, angle);
     b(ink, x, h + 0.76, z, w + 0.4, 0.37, d + 0.4, angle);
@@ -680,7 +722,7 @@ export function createDistrict() {
   ctx.save();
   ctx.translate(parkX, parkZ);
   ctx.rotate(0.28);
-  ctx.fillStyle = '#a6997a';
+  ctx.fillStyle = '#c5a072';
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.arc(0, 0, 17, -Math.PI * 0.8, -Math.PI * 0.3);
@@ -705,14 +747,14 @@ export function createDistrict() {
     feature([386, 391]),
     feature([402, 373])
   ];
-  line(parkLoop, '#a3aa91', 2.2);
+  line(parkLoop, '#dfd3b0', 2.2);
   // A grass playing surface and small-scale fixtures distinguish the park
   // from a colored land-use polygon in the physical workshop model.
   ctx.save();
   path(parkPlane, true);
   ctx.clip();
   const parkRandom = seeded(983);
-  for (let i = 0; i < 9800; i++) {
+  for (let i = 0; i < 2100; i++) {
     const [x, z] = feature([327 + parkRandom() * 120, 304 + parkRandom() * 158]);
     const v = parkRandom();
     disk(x, z, 0.4 + v * 0.8, v > 0.5 ? 'rgba(191,190,145,.21)' : 'rgba(49,83,68,.16)');
@@ -790,13 +832,14 @@ export function createDistrict() {
     ]
   ];
   for (const poly of forestPolys) {
-    fill(poly, '#5b7060');
+    fill(poly, '#a2b48d');
     const xs = poly.map((q) => q[0]),
       zs = poly.map((q) => q[1]);
     for (let x = Math.min(...xs); x < Math.max(...xs); x += 9) {
       for (let z = Math.min(...zs); z < Math.max(...zs); z += 10) {
-        const a = x + random() * 6,
-          q = z + random() * 6;
+        if (random() < 0.24) continue;
+        const a = x + random() * 10 - 2,
+          q = z + random() * 11 - 2;
         if (inPoly(a, q, poly) && !nearRoute(a, q, riverLine, 10)) canopy(a, q, 3.7 + random() * 3.9);
       }
     }
@@ -827,7 +870,7 @@ export function createDistrict() {
   // Low clusters of scrub and small meadow plants inside the undeveloped
   // parcel. Leave the central model footprint clear in the reference arrangement.
   const scrub = seeded(28611);
-  for (let i = 0; i < 3600; i++) {
+  for (let i = 0; i < 770; i++) {
     const x = -226 + scrub() * 447,
       z = -203 + scrub() * 409;
     if (!inPoly(x, z, parcel) || (Math.abs(x) < 26 && Math.abs(z) < 47)) continue;
@@ -847,16 +890,16 @@ export function createDistrict() {
       path(r.mask, true);
       ctx.clip();
     }
-    line(r.points, '#98a49c', r.width + 4);
-    line(r.points, '#65706f', r.width);
+    line(r.points, '#d7d1b9', r.width + 4);
+    line(r.points, '#a8ada2', r.width);
     if (r.arterial) line(r.points, '#c0b797', 0.36, [2.1, 3.5]);
     ctx.restore();
   }
   function rail(points, tracks) {
-    line(points, '#707573', tracks * 4.6 + 5);
+    line(points, '#a49f88', tracks * 4.6 + 5);
     for (let i = 0; i < tracks; i++) {
       const ax = shiftPath(points, (i - (tracks - 1) / 2) * 4.7);
-      line(ax, '#555d5b', 3.05, [0.52, 1.65]);
+      line(ax, '#7c8076', 3.05, [0.52, 1.65]);
       for (const d of [-0.74, 0.74]) line(shiftPath(ax, d), '#a3ada5', 0.3);
     }
   }
@@ -864,9 +907,9 @@ export function createDistrict() {
   rail(railwayEast, 2);
   // Actual rail centerlines have a raised dark ballast bed, ties and paired
   // rails in the local site model. The long drawing is clipped by the renderer.
-  const ballast = stock('#707b76', 0.96),
-    tie = stock('#60655e', 0.94),
-    iron = stock('#9ba8a5', 0.68, 0.22);
+  const ballast = stock('#b0a78e', 0.96),
+    tie = stock('#837d6b', 0.94),
+    iron = stock('#b5b8ad', 0.68, 0.22);
   for (const track of [railwayNorth, railwayEast]) {
     for (let i = 1; i < track.length; i++) {
       const a = track[i - 1],
@@ -879,29 +922,29 @@ export function createDistrict() {
         const x = a[0] + (dx * l) / len,
           z = a[1] + (dz * l) / len;
         if (!inside(x, z, 7)) continue;
-        b(ballast, x, 0.17, z, 2.39, 0.3, 9.7, yaw);
+        b(ballast, x, 0.17, z, 2.32, 0.3, 9.7, yaw);
         for (const off of [-2.35, 2.35]) {
           const mx = x - (dz * off) / len,
             mz = z + (dx * off) / len;
           b(tie, mx, 0.36, mz, 0.54, 0.16, 3, yaw);
           for (const sd of [-0.74, 0.74])
-            b(iron, mx - (dz / len) * sd, 0.52, mz + (dx / len) * sd, 2.36, 0.14, 0.15, yaw);
+            b(iron, mx - (dz / len) * sd, 0.52, mz + (dx / len) * sd, 2.31, 0.14, 0.15, yaw);
         }
       }
     }
   }
-  line(freeway, '#778273', 58);
+  line(freeway, '#b4b796', 58);
   for (const side of [-1, 1]) {
     const midline = shiftPath(freeway, side * 15);
-    line(midline, '#8f9892', 19.4);
-    line(midline, '#626c6c', 17.1);
+    line(midline, '#c0c1aa', 19.4);
+    line(midline, '#929c95', 17.1);
     for (const d of [-3.5, 3.5]) line(shiftPath(midline, d), '#c5c8b9', 0.3, [3.5, 8]);
     line(shiftPath(midline, side * 7.4), '#c4c4b4', 0.32);
     line(shiftPath(midline, -side * 7.6), '#bdb28c', 0.35);
   }
   // Printed curbs and occasional light standards mark Enterprise Drive.
   // Keep long curbs out of the turning head at the north end of the frontage.
-  const curbStock = stock('#a7ac9e', 0.96);
+  const curbStock = stock('#cfccb4', 0.96);
   for (let i = 1; i < enterprise.length; i++) {
     const a = enterprise[i - 1],
       q = enterprise[i],
@@ -920,7 +963,7 @@ export function createDistrict() {
       }
     }
     const edge = shiftPath([a, q], 6.3);
-    line(edge, '#869384', 1.05);
+    line(edge, '#bab797', 1.05);
   }
   for (const pt of [
     [205, 411],
@@ -957,7 +1000,7 @@ export function createDistrict() {
         [x, maxZ - 4],
         [x, maxZ - (Math.abs(Math.round(x)) % 200 === 10 ? 11 : 7)]
       ],
-      '#91a09a',
+      '#968f7e',
       0.75
     );
   }

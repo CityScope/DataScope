@@ -1,8 +1,10 @@
 # DataScope
 
-A local community workshop for exploring the proposed data center at 7500 Enterprise Drive in Allen Park, Michigan. Residents can move a building, compare alternatives and pin questions to the places they affect.
+A community workshop for exploring the proposed data center at 7500 Enterprise Drive in Allen Park, Michigan. Residents can move a building, compare alternatives and pin questions to the places they affect.
 
-## Open the workshop
+[Open the public workshop](https://cityscope-datascope.mitcityscience.chatgpt.site) or [open the sentiment map](https://cityscope-datascope.mitcityscience.chatgpt.site/?view=sentiment).
+
+## Local preview
 
 Run `npm start` from this folder, then open http://127.0.0.1:4174/. The app serves static files and includes its own Three.js and Leaflet libraries. Run `npm test` to check the analysis and workshop behavior.
 
@@ -10,7 +12,7 @@ Run `npm start` from this folder, then open http://127.0.0.1:4174/. The app serv
 
 The scenario table opens at the proposal site. Drag the building to relocate it, drag the ground to orbit and scroll or pinch to zoom. Site shows the building with its neighbors. Building gives a closer look at its architecture and equipment. District and Plan show the broader geography. **Move facility** lets you choose a location on the district table. **Rotate or nudge facility** turns the building or moves it in 50 ft steps. With the table focused, arrow keys move the building 10 ft and Shift + arrow moves it 50 ft.
 
-Choose **Aerial map** to compare the model with aerial imagery or explore a placement beyond the 3D district. The aerial view uses the same placement and analysis and also works in browsers without 3D graphics. Esri imagery loads directly from the provider with attribution. The alternative planning sketch remains available offline.
+The siting questions on the table focus on equipment sound, the river and the parcel. **Inspect design** labels the cooling equipment represented in each of the three illustrative layouts. The placement check flags a footprint that overlaps modeled infrastructure or community uses. Open the check to inspect the findings or try a rail crossing. Locations outside the modeled district and browsers without 3D graphics open the placement in a two-dimensional plan. Esri imagery in this fallback loads directly from its provider with attribution.
 
 ## Live analysis
 
@@ -22,6 +24,8 @@ Choose **Aerial map** to compare the model with aerial imagery or explore a plac
 Position and orientation update the spatial results while you manipulate the building. The reference marks compare with the starting proposal. Click a metric name for the calculation and its limitations, or open **Case evidence & sources** for the planning records and geography.
 
 ## Community participation
+
+The **Sentiment map** contains 30 fictional opening posts and 14 replies about five places. Rings show the number and mix of opening posts at each place. Filter by viewpoint, topic, source and phase. Open a thread to read its replies. The pins identify the place discussed. Workshop notes are authored by participants and stay in their browser or export file.
 
 Save named siting options and compare them alongside the proposal and no build. A pinned note keeps its geographic location, text and associated placement. Workshop files let participants exchange saved options and notes. Placement links encode the location, orientation and design. A local preview link opens on the computer running the workshop. Existing workshops from the earlier map interface also open here.
 

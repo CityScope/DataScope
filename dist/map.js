@@ -1,3 +1,5 @@
+import { evaluateConstraints } from './studio/constraints.js';
+import { equipmentSourcePoint } from './studio/analysis.js';
 // The movable outline is an illustrative, single-storey 45,000 ft² rectangle.
 // Distances here are local tangent-plane distances for drawing, not a land survey.
 import { site, places, river } from './geography.js';
@@ -291,6 +293,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   const notesGroup = L.layerGroup();
   const seenNotes = new Map();
   const roofGroup = L.layerGroup();
+  const impactGroup = L.layerGroup().addTo(roofGroup);
   const quiet = { interactive: false, pane: 'scopeRoof' };
   const roofHalo = L.polygon([], {
     ...quiet,
@@ -328,6 +331,36 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     const ring = [p(-w, -h), p(-w, h), p(w, h), p(w, -h)];
     roofHalo.setLatLngs(ring);
     roofShape.setLatLngs(ring);
+    impactGroup.clearLayers();
+    const screening = evaluateConstraints({ point, angle });
+    const color =
+      state.layers?.constraints !== false && screening.items.length
+        ? screening.status === 'conflict'
+          ? '#ec533e'
+          : '#e5a832'
+        : '#59e0d3';
+    roofHalo.setStyle({ color });
+    roofShape.setStyle({ color });
+    if (state.layers?.constraints !== false) {
+      for (const part of screening.overlaps) {
+        const polygon = part.clipped.map(([x, z]) => offset(site.center, x, -z));
+        L.polygon(polygon, { ...quiet, color, weight: 1, fillOpacity: 0.65 }).addTo(impactGroup);
+      }
+    }
+    if (state.layers?.sound !== false) {
+      const source = equipmentSourcePoint(point, angle);
+      for (const radius of [150, 47.43]) {
+        L.circle(source, {
+          radius,
+          color: '#a662ac',
+          weight: 2,
+          dashArray: '5 3',
+          fillOpacity: 0.09,
+          pane: 'scopeContext',
+          interactive: false
+        }).addTo(impactGroup);
+      }
+    }
     const stripes = [];
     for (let y = -h + 8; y < h; y += 12)
       stripes.push([p(-w + 4, y), p(-w + 4, y + 3), p(w - 4, y + 3), p(w - 4, y), p(-w + 4, y)]);
