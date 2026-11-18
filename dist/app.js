@@ -1,4 +1,6 @@
 import { site, places, sources } from './geography.js';
+import { analyzePlacement } from './studio/analysis.js';
+import { createReadouts, displayNumber, methodsHTML } from './studio/readouts.js';
 import { createMap } from './map.js';
 import { icon, hydrateIcons } from './icons.js';
 import {
@@ -6,7 +8,6 @@ import {
   saveWorkspace,
   parseWorkshop,
   serializeWorkshop,
-  measure,
   isStudyPoint,
   WORKSHOP_LIMITS
 } from './workshop.js';
@@ -18,49 +19,34 @@ const escapeHTML = (value) =>
     (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[x]
   );
 const id = () => crypto.randomUUID();
-const fields = ['park', 'school', 'housing'];
-const kinds = { park: 'Park', school: 'School', housing: 'Senior housing' };
 const topics = ['Question', 'Suggestion', 'Concern', 'Local knowledge'];
 const designs = {
-  reference: {
-    name: 'Reference design',
-    energy: 182.2,
-    water: 3,
-    detail:
-      'Annual electricity assumes 26 MW at 80% average load. Annual cooling-water supply is set at 3 million gallons.'
-  },
-  efficient: {
-    name: 'Higher efficiency',
-    energy: 151.8,
-    water: null,
-    detail:
-      'The same computing workload with power usage effectiveness improving from 1.50 to 1.25. This scenario models electricity only.'
-  },
-  dry: {
-    name: 'Dry cooling',
-    energy: 184.0,
-    water: 0.3,
-    detail:
-      'The workshop assumes 90% less cooling water and 1% more electricity than the reference design.'
-  }
+  reference: { name: 'Reference design', subtitle: '26 MW facility' },
+  efficient: { name: 'Higher efficiency', subtitle: 'Lower electricity use' },
+  dry: { name: 'Dry cooling', subtitle: 'Lower cooling-water use' }
 };
 const state = loadWorkspace(site.center);
 const ui = {
-  tab: 'siting',
+  view: 'studio',
+  camera: 'site',
   mode: 'explore',
-  layers: { places: true, site: true, river: true, notes: true },
-  selectedNote: null
+  layers: { places: true, site: true, river: true, notes: true, sound: true },
+  selectedNote: null,
+  receptorId: 'riel'
 };
-const panel = $('panel'),
-  dialog = $('dialog');
+const dialog = $('dialog');
+const updateReadouts = createReadouts($('metrics'), $('resource-values'));
 let timer,
   map,
-  sessionSaved = true,
+  studio,
+  aerial,
+  sceneContains = () => true,
+  unavailable = false,
   previousCustom = null,
   mapCenter = site.center,
   imported = null;
 const noBuild = () => state.active === 'none';
-const proposalDistances = measure(site.center, places);
+
 function scenarioName(which = state.active) {
   if (which === 'proposal') return 'Proposed site';
   if (which === 'custom') return 'My placement';
@@ -74,7 +60,7 @@ function remember() {
   if (state.active === 'custom') previousCustom = snapshot();
 }
 function store(replace = false) {
-  sessionSaved = saveWorkspace(state, { replace });
+  const sessionSaved = saveWorkspace(state, { replace });
   $('local-status').innerHTML = sessionSaved
     ? '<b></b> Saved on this device'
     : 'In memory · export to keep';
@@ -115,120 +101,65 @@ function addressLink() {
   u.hash = q.toString();
   return u.href;
 }
-function setDrawer(open) {
-  const isOpen = open && matchMedia('(max-width:760px)').matches;
-  $('sidebar').classList.toggle('open', isOpen);
-  $('scrim').hidden = !isOpen;
-  $('open-drawer').setAttribute('aria-expanded', isOpen);
-  if (isOpen) $('close-drawer').focus();
+function renderControls() {
+  const opts = [
+    ['proposal', 'Proposed site'],
+    ['custom', 'My placement'],
+    ['none', 'No build'],
+    ...state.scenarios.map((s) => [s.id, s.name])
+  ];
+  const select = $('placement');
+  select.replaceChildren(...opts.map(([k, name]) => new Option(name, k)));
+  select.value = state.active;
+  $('count').textContent = state.notes.length;
+  $('notes').setAttribute('aria-label', 'Community notes (' + state.notes.length + ')');
+  document.querySelector('[data-camera="building"]').disabled = noBuild();
+  if (noBuild() && ui.camera === 'building') studio?.view('site');
+  $('save').disabled = noBuild();
+  $('adjust').disabled = noBuild();
+  $('design-choices')
+    .querySelectorAll('button')
+    .forEach((b) => {
+      b.disabled = noBuild();
+      b.setAttribute('aria-pressed', !noBuild() && b.dataset.design === state.design);
+    });
+  $('design-caption').textContent = noBuild() ? 'No facility on the table' : 'Same computing workload';
 }
-function showTab(tab) {
-  ui.tab = tab;
-  panel.scrollTop = 0;
-  document.querySelectorAll('[data-tab]').forEach((b) => {
-    if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
-  renderPanel();
+function renderMetrics(point = state.point) {
+  updateReadouts({ ...state, point }, ui.receptorId);
 }
-function option(key, ico, title, subtitle) {
-  const active = state.active === key;
-  return (
-    '<button class="option ' +
-    (active ? 'active' : '') +
-    '" data-choice="' +
-    escapeHTML(key) +
-    '" aria-pressed="' +
-    active +
-    '"><span class="opt-icon">' +
-    icon(ico) +
-    '</span><span><strong>' +
-    escapeHTML(title) +
-    '</strong><small>' +
-    escapeHTML(subtitle) +
-    '</small></span><span class="radio"></span></button>'
-  );
-}
-function designSelect() {
-  return (
-    '<label class="field">Facility design<select id="design">' +
-    Object.entries(designs)
-      .map(
-        ([k, d]) =>
-          '<option value="' +
-          k +
-          '" ' +
-          (state.design === k ? 'selected' : '') +
-          '>' +
-          d.name +
-          '</option>'
-      )
-      .join('') +
-    '</select></label>'
-  );
-}
-function sitingPanel() {
-  const saved = state.scenarios
-    .map((s) => option(s.id, 'save', s.name, designs[s.design].name))
+function renderDesigns() {
+  $('design-choices').innerHTML = Object.entries(designs)
+    .map(
+      ([key, d]) =>
+        '<button class="design-card" data-design="' +
+        key +
+        '"><img aria-hidden="true" alt="" src="assets/design-' +
+        key +
+        '.webp"><span><strong>' +
+        d.name +
+        '</strong><small>' +
+        d.subtitle +
+        '</small></span><i class="radio"></i></button>'
+    )
     .join('');
-  const edit = state.point
-    ? '<div class="action-row"><button class="primary" data-act="move">' +
-      icon('move') +
-      'Move footprint</button><button data-act="save">' +
-      icon('save') +
-      'Save option</button></div>' +
-      designSelect() +
-      '<details class="section-detail" data-detail="adjust"><summary>Footprint controls</summary><p class="hint">Drag the teal handle or move in 50 ft steps.</p><div class="nudge-row">' +
+}
+function adjust() {
+  if (!state.point) return;
+  showDialog(
+    'Position and orientation',
+    '<label class="field">Building rotation <output id="degrees">' +
+      state.angle +
+      '°</output><input type="range" id="angle" min="0" max="355" step="5" value="' +
+      state.angle +
+      '"></label><p class="hint">Move the building in 50 ft steps.</p><div class="nudge-row">' +
       ['North', 'West', 'East', 'South']
-        .map(
-          (d, i) =>
-            '<button aria-label="Move 50 feet ' +
-            d.toLowerCase() +
-            '" title="' +
-            d +
-            ' 50 ft" data-nudge="' +
-            d +
-            '">' +
-            ['↑', '←', '→', '↓'][i] +
-            '</button>'
-        )
+        .map((d) => '<button data-nudge="' + d + '">' + d + '</button>')
         .join('') +
-      '</div><label class="field" for="angle">Rotation <span id="degrees">' +
-      state.angle +
-      '°</span></label><div class="nudge-row"><input id="angle" type="range" min="0" max="355" step="5" value="' +
-      state.angle +
-      '" aria-label="Footprint rotation"></div></details>' +
-      '<details class="section-detail" data-detail="model"><summary>Modeled resource use</summary>' +
-      modelDetails(state.design) +
-      '</details>'
-    : '<p class="hint">No new facility is added. Use this baseline when comparing locations or resource use.</p>';
-  return (
-    '<div class="facility"><div class="plate"><div class="capacity"><strong>26 <small>MW</small></strong><span>Proposed capacity</span></div><img src="assets/facility.svg" alt="Illustration of a data center"></div><div class="facility-caption"><b>7500 Enterprise Drive</b><span>Site plan denied</span></div></div>' +
-    '<p class="smallhead">Siting options</p><div class="options">' +
-    option('proposal', 'plan', 'Proposed site', 'Enterprise Drive parcel') +
-    option('custom', 'move', 'My placement', 'Choose any point on the study map') +
-    option('none', 'subtract', 'No build', 'Keep the current land use') +
-    saved +
-    '</div>' +
-    '<div class="control-group"><p class="smallhead">' +
-    escapeHTML(scenarioName()) +
-    '</p>' +
-    edit +
-    '</div>'
+      '</div><div class="dialog-actions"><button data-act="close">Done</button></div>'
   );
 }
-function modelDetails(design) {
-  const d = designs[design];
-  return (
-    '<div class="model-row"><span>Electricity / year</span><b>' +
-    d.energy +
-    ' GWh</b></div><div class="model-row"><span>Cooling water / year</span><b>' +
-    (d.water === null ? 'Unmodeled' : d.water + 'M gal') +
-    '</b></div><p class="minor">' +
-    d.detail +
-    ' Illustrative workshop estimates.</p>'
-  );
-}
+
 function notesPanel() {
   const list = [...state.notes]
     .reverse()
@@ -246,23 +177,25 @@ function notesPanel() {
     )
     .join('');
   return (
-    '<h2>Community notes</h2><p class="hint">Mark where something matters to you. Each note keeps the placement you were viewing.</p><button class="wide" data-act="add-note">' +
+    '<p class="hint">Mark where something matters to you. Each note keeps the placement you were viewing.</p><button class="wide" data-act="add-note">' +
     icon('pinplus') +
     'Place a note</button>' +
     (list ||
       '<div class="empty">' +
         icon('note') +
         '<h3>No notes yet</h3><p class="hint">Choose a street, park or other place to leave your first question.</p></div>') +
-    '<p class="minor">Notes stay in this browser. Use Workshop files to exchange them with other participants.</p>'
+    ('<p class="minor">Notes stay in this browser. Use a workshop file to exchange them with other participants.</p><button data-act="files">' +
+      icon('share') +
+      'Workshop files</button>')
   );
 }
 const cityRecords =
   'https://www.cityofallenpark.org/government/agenda_and_minutes/planning_commission.php';
 function evidencePanel() {
   return (
-    '<h2>Case evidence</h2><p class="hint">Allen Park’s Planning Commission denied the preliminary site plan on June 4, 2026. Its findings included unresolved engineering questions and noise near homes and a public park.</p><div class="ref"><a target="_blank" rel="noopener" href="' +
+    '<p class="hint">Allen Park’s Planning Commission denied the preliminary site plan on June 4, 2026. Its findings included unresolved engineering questions and noise near homes and a public park.</p><div class="ref"><a target="_blank" rel="noopener" href="' +
     cityRecords +
-    '">City planning record</a><p>7500 Enterprise Drive · Parcel 30-008-99-0001-712. Review the June decision and the January site drawings. The applicant moved outdoor equipment west so the building could shield the park and homes to the east.</p></div><div class="ref"><h3>Workshop assumptions</h3><p>The teal shape is a movable 90 × 46 m building, about 45,000 sq ft. Its starting point is inside the proposal parcel. Its shape and orientation are illustrative.</p><p>Distances run from its center to selected public reference points. Site suitability, noise, water service and available grid capacity require further study.</p></div><div class="ref"><h3>Energy and water</h3><p>Scenarios use the DataCenterScope case study, pages 16–20 and 34–39. Energy uses an 80% load assumption. Water values are scenario inputs.</p></div>' +
+    '">City planning record</a><p>7500 Enterprise Drive · Parcel 30-008-99-0001-712. Review the June decision and the January site drawings. The applicant moved outdoor equipment west so the building could shield the park and homes to the east.</p></div><div class="ref"><h3>Workshop assumptions</h3><p>The movable architectural model uses an illustrative 90 × 46 m footprint, approximately 45,000 sq ft. Neighborhood buildings, trees, and heights are generalized. The surveyed property, site layout, and engineering design require their own records.</p><p>The model calculates river clearance from the building edge and sound from the equipment yard to a selected community place. Site suitability, noise, water service and available grid capacity require further study.</p></div><div class="ref"><h3>Energy and water</h3><p>Scenarios use the DataCenterScope case study, pages 16–20 and 34–39. Energy uses an 80% load assumption. Water values are scenario inputs.</p></div>' +
     sources
       .map(
         (s) =>
@@ -277,98 +210,93 @@ function evidencePanel() {
       .join('')
   );
 }
-function renderPanel() {
-  const scroll = panel.scrollTop,
-    expanded = new Set([...panel.querySelectorAll('details[open]')].map((e) => e.dataset.detail));
-  panel.innerHTML =
-    ui.tab === 'siting' ? sitingPanel() : ui.tab === 'notes' ? notesPanel() : evidencePanel();
-  panel.querySelectorAll('details').forEach((e) => {
-    e.open = expanded.has(e.dataset.detail);
-  });
-  panel.scrollTop = scroll;
-  $('count').textContent = state.notes.length;
-}
-function distance(m) {
-  return m == null ? '—' : (m / 1609.344).toFixed(2);
-}
-function insideStudyParcel([lat, lng]) {
-  const ring = site.boundary;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [y1, x1] = ring[i],
-      [y2, x2] = ring[j];
-    if (y1 > lat !== y2 > lat && lng < ((x2 - x1) * (lat - y1)) / (y2 - y1) + x1) inside = !inside;
-  }
-  return inside;
-}
-function renderMetrics(point = state.point) {
-  const values = measure(point, places);
-  $('parcel-context').hidden = !ui.layers.site;
-  $('parcel-state').textContent = point
-    ? insideStudyParcel(point)
-      ? 'Center inside parcel'
-      : 'Center outside parcel'
-    : 'No new footprint';
-  $('origin').textContent = point ? 'From footprint center · straight line' : 'No new facility';
-  $('metrics').innerHTML = fields
-    .map((k) => {
-      const v = values[k],
-        place = places.find((p) => p.type === k);
-      const change =
-        v && proposalDistances[k]
-          ? Math.round(((v.meters - proposalDistances[k].meters) / 1609.344) * 100)
-          : 0;
-      const delta = change
-        ? '<span class="distance-change" title="Change from the proposed site">' +
-          Math.abs(change / 100).toFixed(2) +
-          ' mi ' +
-          (change > 0 ? 'farther' : 'closer') +
-          '</span>'
-        : '';
-      return (
-        '<div class="metric"><span class="metric-type">' +
-        icon(k) +
-        kinds[k] +
-        '</span><strong>' +
-        distance(v?.meters) +
-        (v ? ' <small>mi</small>' : '') +
-        '</strong>' +
-        delta +
-        '<p>' +
-        escapeHTML(v?.name ?? place?.name ?? 'No mapped place') +
-        '</p></div>'
-      );
-    })
-    .join('');
-}
 function drawMap() {
   map?.render({
-    point: state.point,
-    angle: state.angle,
+    ...state,
     mode: ui.mode,
     layers: ui.layers,
-    notes: state.notes,
-    selectedNote: ui.selectedNote
+    selectedNote: ui.selectedNote,
+    receptorId: ui.receptorId
   });
   $('modebar').hidden = ui.mode === 'explore';
+  $('move').setAttribute('aria-pressed', ui.mode === 'place');
   if (ui.mode !== 'explore')
     $('modebar').innerHTML =
       '<b>' +
-      (ui.mode === 'note' ? 'Choose a place for your note' : 'Choose a footprint location') +
-      '</b><div class="mode-actions"><button data-act="center">Use map center</button><button data-act="cancel-mode">Cancel</button></div>';
+      (ui.mode === 'note' ? 'Choose a place for your note' : 'Choose a site for the building') +
+      '</b><div class="mode-actions"><button data-act="center">Use view center</button><button data-act="cancel-mode">Cancel</button></div>';
 }
 function render() {
-  renderPanel();
+  renderControls();
   renderMetrics();
   drawMap();
 }
 function setMode(mode) {
+  if (dialog.open) closeDialog();
   ui.mode = mode;
   $('layers-menu').hidden = true;
   $('layers').setAttribute('aria-expanded', 'false');
-  if (mode !== 'explore') setDrawer(false);
+  if (mode !== 'explore' && ui.view === 'studio') map?.view('district');
   drawMap();
 }
+function viewControls() {
+  document.querySelectorAll('[data-workview]').forEach((b) => {
+    b.setAttribute('aria-pressed', b.dataset.workview === ui.view);
+    if (b.dataset.workview === 'studio') b.disabled = unavailable;
+  });
+  document.querySelector('.cam-modes').hidden = ui.view !== 'studio';
+  document.querySelector('.aerial-modes').hidden = ui.view !== 'aerial';
+  $('map').hidden = ui.view !== 'aerial';
+  $('scene').hidden = ui.view !== 'studio';
+}
+function setCamera(view) {
+  ui.camera = view;
+  document
+    .querySelectorAll('[data-camera]')
+    .forEach((b) => b.setAttribute('aria-pressed', b.dataset.camera === view));
+}
+function aerialMap() {
+  return (aerial ??= createMap($('map'), {
+    onPlace: placeAt,
+    onNote: addNoteAt,
+    onMarker: showNote,
+    onPreview: renderMetrics,
+    onMoveEnd: (c) => {
+      if (ui.view === 'aerial') mapCenter = c;
+    }
+  }));
+}
+function changeView(view, notify = true) {
+  if (view === 'studio' && (unavailable || !studio)) {
+    if (notify)
+      toast(unavailable ? '3D graphics are unavailable in this browser.' : 'Preparing the 3D model.');
+    return;
+  }
+  if (view === 'studio' && state.point && !sceneContains(state.point)) {
+    if (notify) toast('This placement is outside the 3D district. Explore it on the aerial map.');
+    return;
+  }
+  const changed = view !== ui.view;
+  ui.view = view;
+  ui.mode = 'explore';
+  viewControls();
+  if (view === 'aerial') $('loading').hidden = true;
+  map = view === 'studio' ? studio : aerialMap();
+  map?.resize();
+  drawMap();
+  if (changed && state.point) {
+    map?.focus(state.point);
+  } else if (changed) {
+    map?.home();
+  }
+  $('layers-menu').hidden = true;
+  $('layers').setAttribute('aria-expanded', 'false');
+}
+function focusPoint(point) {
+  if (ui.view === 'studio' && !sceneContains(point)) changeView('aerial', false);
+  map?.focus(point);
+}
+
 function placeAt(point) {
   if (!isStudyPoint(point)) {
     drawMap();
@@ -389,7 +317,6 @@ function choose(key) {
     if (previousCustom) Object.assign(state, previousCustom, { active: 'custom' });
     else Object.assign(state, { active: 'custom', point: state.point || [...site.center] });
     ui.mode = 'place';
-    setDrawer(false);
   } else if (key === 'none')
     Object.assign(state, { active: 'none', point: null, angle: 0, design: 'reference' });
   else if (key === 'proposal')
@@ -399,7 +326,8 @@ function choose(key) {
     if (!s) return;
     Object.assign(state, { active: s.id, point: [...s.point], angle: s.angle, design: s.design });
   }
-  if (state.point && key !== 'custom') map.focus(state.point);
+  if (state.point && key !== 'custom') focusPoint(state.point);
+  if (key === 'custom' && ui.view === 'studio') map?.view('district');
   store();
   render();
 }
@@ -456,7 +384,7 @@ function addNoteAt(point) {
     ui.selectedNote = n.id;
     store();
     closeDialog();
-    showTab('notes');
+
     render();
     toast('Note saved at this place.');
   };
@@ -466,8 +394,8 @@ function showNote(noteId) {
   if (!n) return;
   ui.selectedNote = n.id;
   ui.mode = 'explore';
-  setDrawer(false);
-  map.focus([n.lat, n.lng]);
+
+  focusPoint([n.lat, n.lng]);
   drawMap();
   showDialog(
     n.topic,
@@ -515,39 +443,45 @@ function saveOption() {
 }
 function compare() {
   const options = [
-    { name: 'Proposed site', point: site.center, design: 'reference' },
-    { name: 'No build', point: null, design: 'reference' },
+    { name: 'Proposed site', point: site.center, angle: 0, design: 'reference' },
+    { name: 'No build', point: null, angle: 0, design: 'reference' },
     ...state.scenarios
   ];
   if (state.active === 'custom') options.push({ name: 'My placement', ...snapshot() });
+  const body = options
+    .map((o) => {
+      const a = analyzePlacement(o, { receptorId: ui.receptorId });
+      const number = (v, unit, dec = 0) => (v == null ? '—' : displayNumber(v, dec) + ' ' + unit);
+      return (
+        '<tr><td><b>' +
+        escapeHTML(o.name) +
+        '</b><small>' +
+        (o.point ? designs[o.design].name : 'No facility') +
+        '</small></td><td>' +
+        number(a.soundDbA, 'dBA', 1) +
+        '</td><td>' +
+        number(a.riverSetbackM == null ? null : a.riverSetbackM * 3.28084, 'ft') +
+        '</td><td>' +
+        number(a.parcelCoveragePct, '%') +
+        '</td><td>' +
+        number(a.energyGWh, 'GWh', 1) +
+        '</td><td>' +
+        (a.waterMGal === null ? 'Unmodeled' : number(a.waterMGal, 'M gal', 1)) +
+        '</td></tr>'
+      );
+    })
+    .join('');
   showDialog(
     'Compare siting options',
-    '<p class="hint">Distances are straight lines to the mapped reference points. Energy and cooling water are annual workshop estimates.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Park</th><th>School</th><th>Senior housing</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
-      options
-        .map((o) => {
-          const metrics = measure(o.point, places),
-            d = designs[o.design];
-          return (
-            '<tr><td><b>' +
-            escapeHTML(o.name) +
-            '</b><small>' +
-            (o.point ? d.name : 'No facility') +
-            '</small></td>' +
-            fields
-              .map((k) => '<td>' + (metrics[k] ? distance(metrics[k].meters) + ' mi' : '—') + '</td>')
-              .join('') +
-            '<td>' +
-            (o.point ? d.energy : 0) +
-            ' GWh</td><td>' +
-            (o.point ? (d.water === null ? 'Unmodeled' : d.water + 'M gal') : '0 gal') +
-            '</td></tr>'
-          );
-        })
-        .join('') +
-      '</tbody></table></div><p class="minor">No build shows zero added resource use. Save more placements to include them here.</p>',
+    '<p class="hint">Equipment sound is modeled at ' +
+      escapeHTML(places.find((p) => p.id === ui.receptorId).name) +
+      '. Resource estimates are annual.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Sound</th><th>River clearance</th><th>Inside parcel</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
+      body +
+      '</tbody></table></div><p class="minor">Save more placements to include them here. No build adds zero water and electricity demand.</p>',
     true
   );
 }
+
 function fileBtn(action, glyph, title, desc) {
   return (
     '<button class="filechoice" data-act="' +
@@ -639,6 +573,7 @@ function toggleLayerMenu() {
   $('layers').setAttribute('aria-expanded', opening);
   if (opening)
     menu.innerHTML = Object.entries({
+      ...(ui.view === 'studio' ? { sound: 'Equipment sound field' } : {}),
       site: 'Proposed parcel',
       river: 'Ecorse River',
       places: 'Community places',
@@ -686,8 +621,8 @@ const actions = {
     store(true);
     closeDialog();
     render();
-    if (state.point) map.focus(state.point);
-    else map.home();
+    if (state.point) focusPoint(state.point);
+    else map?.home();
     toast('Workshop opened.');
   }
 };
@@ -701,9 +636,9 @@ function restore(n) {
   });
   store();
   closeDialog();
-  showTab('siting');
+
   render();
-  if (state.point) map.focus(state.point);
+  if (state.point) focusPoint(state.point);
 }
 function nudge(direction) {
   if (!state.point) return;
@@ -713,8 +648,7 @@ function nudge(direction) {
     dx = dy / Math.cos((lat * Math.PI) / 180);
   const offset = { North: [dy, 0], South: [-dy, 0], West: [0, -dx], East: [0, dx] }[direction];
   placeAt([lat + offset[0], lng + offset[1]]);
-  map.focus(state.point);
-  panel.querySelector('[data-nudge="' + direction + '"]')?.focus({ preventScroll: true });
+  focusPoint(state.point);
 }
 document.addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -727,12 +661,24 @@ document.addEventListener('click', (e) => {
     actions[b.dataset.act]?.();
     return;
   }
-  if (b.dataset.tab) {
-    showTab(b.dataset.tab);
+  if (b.dataset.workview) {
+    changeView(b.dataset.workview);
     return;
   }
-  if (b.dataset.choice) {
-    choose(b.dataset.choice);
+  if (b.dataset.camera) {
+    studio?.view(b.dataset.camera);
+    return;
+  }
+  if (b.dataset.design) {
+    if (!state.point || !Object.hasOwn(designs, b.dataset.design)) return;
+    state.design = b.dataset.design;
+    state.active = 'custom';
+    store();
+    render();
+    return;
+  }
+  if (b.dataset.method) {
+    showDialog('Model assumptions', methodsHTML(b.dataset.method));
     return;
   }
   if (b.dataset.note) {
@@ -751,14 +697,17 @@ document.addEventListener('click', (e) => {
     files,
     full: toggleFull,
     compare,
+    save: saveOption,
+    adjust,
+    move: () => setMode(ui.mode === 'place' ? 'explore' : 'place'),
+    notes: () => showDialog('Community notes', notesPanel()),
+    evidence: () => showDialog('Case evidence', evidencePanel()),
+    methods: () => showDialog('Model assumptions', methodsHTML()),
     'add-note': actions['add-note'],
     layers: toggleLayerMenu,
-    home: () => map.home(),
-    zin: () => map.zoomBy(1),
-    zout: () => map.zoomBy(-1),
-    'open-drawer': () => setDrawer(true),
-    'close-drawer': () => setDrawer(false),
-    scrim: () => setDrawer(false),
+    home: () => map?.home(),
+    zin: () => map?.zoomBy(1),
+    zout: () => map?.zoomBy(-1),
     'dialog-close': closeDialog
   };
   if (Object.hasOwn(top, b.id)) top[b.id]();
@@ -772,22 +721,22 @@ document.addEventListener('change', (e) => {
     return;
   }
   if (t.id === 'base') {
-    map.setBase(t.value);
+    aerial?.setBase(t.value);
     return;
   }
-  if (t.id === 'design' && Object.hasOwn(designs, t.value)) {
-    state.design = t.value;
-    state.active = 'custom';
-    store();
-    render();
-    panel.querySelector('#design')?.focus({ preventScroll: true });
-    toast('Facility design updated.');
+  if (t.id === 'placement') {
+    choose(t.value);
+    return;
+  }
+  if (t.id === 'receiver') {
+    ui.receptorId = t.value;
+    renderMetrics();
+    drawMap();
     return;
   }
   if (t.id === 'angle') {
     store();
     render();
-    panel.querySelector('#angle')?.focus({ preventScroll: true });
   }
 });
 document.addEventListener('input', (e) => {
@@ -796,13 +745,14 @@ document.addEventListener('input', (e) => {
     state.active = 'custom';
     $('degrees').textContent = state.angle + '°';
     drawMap();
+    renderMetrics();
   }
 });
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !dialog.open) {
     if (!$('layers-menu').hidden) toggleLayerMenu();
     if (ui.mode !== 'explore') setMode('explore');
-    if ($('sidebar').classList.contains('open')) setDrawer(false);
   }
 });
 document.addEventListener('fullscreenchange', () => {
@@ -810,39 +760,59 @@ document.addEventListener('fullscreenchange', () => {
     'aria-label',
     document.fullscreenElement ? 'Exit full screen' : 'Enter full screen'
   );
-  map.resize();
+  map?.resize();
 });
-matchMedia('(max-width:760px)').addEventListener('change', () => {
-  setDrawer(false);
-  map.resize();
-});
+matchMedia('(max-width:690px)').addEventListener('change', () => map?.resize());
 dialog.addEventListener('close', () => {
   imported = null;
 });
 window.addEventListener('storage', (e) => {
   if (dialog.open || ui.mode !== 'explore' || !e.key?.startsWith('datascope:workshop:')) return;
   Object.assign(state, loadWorkspace(site.center));
+  if (ui.view === 'studio' && state.point && !sceneContains(state.point)) changeView('aerial', false);
   render();
 });
 hydrateIcons();
+renderDesigns();
 const linked = readLink();
 if (location.hash.startsWith('#view=placement'))
   history.replaceState(null, '', location.pathname + location.search);
-map = createMap($('map'), {
-  onPlace: placeAt,
-  onNote: addNoteAt,
-  onMarker: showNote,
-  onPreview: renderMetrics,
-  onMoveEnd: (c) => {
-    mapCenter = c;
-  }
-});
+function fallback() {
+  if (unavailable) return;
+  unavailable = true;
+  $('loading').hidden = true;
+  changeView('aerial', false);
+  toast('3D graphics are unavailable. The aerial map has the same live analysis.');
+}
 render();
+try {
+  const module = await import('./studio/scene.js');
+  sceneContains = module.sceneContains;
+  studio = module.makeScene($('scene'), {
+    onPlace: placeAt,
+    onPreview: renderMetrics,
+    onNote: addNoteAt,
+    onMarker: showNote,
+    onCenter: (c) => {
+      if (ui.view === 'studio') mapCenter = c;
+    },
+    onView: setCamera,
+    onReady: () => {
+      $('loading').hidden = true;
+    },
+    onError: fallback
+  });
+  if (!unavailable) changeView(state.point && !sceneContains(state.point) ? 'aerial' : ui.view, false);
+} catch (error) {
+  console.error('DataScope 3D', error);
+  fallback();
+}
 if (linked) {
   store();
-  if (state.point) map.focus(state.point);
   toast('Shared placement opened.');
-} else if (state.point && state.active !== 'proposal') map.focus(state.point);
+}
+if (state.point && state.active !== 'proposal') focusPoint(state.point);
+
 window.addEventListener('hashchange', () => {
   if (!readLink()) return;
   history.replaceState(null, '', location.pathname + location.search);
@@ -850,7 +820,7 @@ window.addEventListener('hashchange', () => {
   ui.selectedNote = null;
   store();
   render();
-  if (state.point) map.focus(state.point);
-  else map.home();
+  if (state.point) focusPoint(state.point);
+  else map?.home();
   toast('Shared placement opened.');
 });
