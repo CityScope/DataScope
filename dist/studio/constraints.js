@@ -2,11 +2,12 @@
 // The city exhibit supplies generalized rail, road and park outlines. Feature
 // widths are the ones drawn on the model; these are not surveyed rights of way.
 import { site, river } from '../geography.js';
+import { modelBounds, industrialStructures, schoolStructures, seniorStructures } from './model-data.js';
 
 const deg = Math.PI / 180;
 const my = 111320;
 const mx = my * Math.cos(site.center[0] * deg);
-const bounds = { west: -780, east: 1020, north: -850, south: 650 };
+const bounds = modelBounds;
 const halfWidth = (45000 * 0.09290304) / 90 / 2;
 const halfLength = 45;
 const geo = ([lat, lng]) => [(lng - site.center[1]) * mx, (site.center[0] - lat) * my];
@@ -196,14 +197,22 @@ feature(
   'School building overlap',
   'The footprint intersects an illustrative Melvindale High School building. Verify the surveyed building and site limits.',
   'review',
-  [structure(455, 86, 49, 65, -0.38), structure(472, 92, 45, 38, -0.38)]
+  schoolStructures.map((s) => structure(...s))
 );
 feature(
   'senior',
   'Senior housing overlap',
   'The footprint intersects the illustrated Maple Heights building. Check the actual building and site limits.',
   'review',
-  [structure(653, 343, 43, 25, 0.36)]
+  seniorStructures.map((s) => structure(...s))
+);
+
+feature(
+  'structure',
+  'Existing structure shown on model',
+  'The footprint overlaps an industrial building depicted on the exhibit. This is approximate model geometry; confirm current occupancy, ownership and the surveyed building limits.',
+  'review',
+  industrialStructures.map((s) => structure(...s))
 );
 
 // Residential streets are schematic. West-side street strips are clipped to

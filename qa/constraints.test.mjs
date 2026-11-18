@@ -106,3 +106,13 @@ test('river ruler endpoints coincide with the selected oriented footprint, mappe
   }
   assert.equal(analyzePlacement({ point: null }).riverWitness, null);
 });
+
+
+test('a placement within the industrial mass shown on the model requires review', () => {
+  for (const angle of [0, 30, 95]) {
+    const result = evaluateConstraints({ point: [42.266094, -83.213084], angle });
+    assert(result.items.some((item) => item.id === 'structure'));
+    assert.notEqual(result.status, 'clear');
+    assert(result.overlaps.some((overlap) => overlap.id === 'structure'));
+  }
+});

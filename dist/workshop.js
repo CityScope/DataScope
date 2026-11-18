@@ -5,6 +5,8 @@ export const STUDY_BOUNDS = [
   [42.36, -83.11]
 ];
 
+export const setbackOption = { name: 'Southwest setback · example', point: [42.26792, -83.20847], angle: 30, design: 'reference' };
+
 export const WORKSHOP_LIMITS = {
   scenarios: 60,
   notes: 1000,
@@ -12,7 +14,7 @@ export const WORKSHOP_LIMITS = {
   note: 1200
 };
 
-const standardChoices = new Set(['proposal', 'custom', 'none']);
+const standardChoices = new Set(['proposal', 'setback', 'custom', 'none']);
 const designOptions = new Set(['reference', 'efficient', 'dry']);
 const earthRadius = 6371008.8;
 

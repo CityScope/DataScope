@@ -61,12 +61,13 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   L.imageOverlay('./assets/district-plan.webp', bounds, { opacity: 0.9, interactive: false }).addTo(map);
   L.polyline(river, { weight: 2, color: '#347a87', opacity: 0.65, interactive: false }).addTo(map);
   L.polygon(site.boundary, {
-    color: '#655144',
+    color: '#497f6d',
     weight: 1.5,
     dashArray: '4 3',
     fillOpacity: 0.07,
     interactive: false
   }).addTo(map);
+  L.marker(site.center, { interactive: false, icon: L.divIcon({ className: 'proposal-map-label', html: 'Proposed site', iconSize: [77, 20], iconAnchor: [39, -26] }) }).addTo(map);
   L.control.scale({ imperial: true, metric: false, position: 'bottomright', maxWidth: 90 }).addTo(map);
   const groups = L.layerGroup().addTo(map),
     pins = L.layerGroup().addTo(map);
@@ -103,7 +104,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   function fit() {
     map.fitBounds(L.latLngBounds(zones.map((z) => z.center)), {
       paddingTopLeft: [42, 58],
-      paddingBottomRight: [60, 110],
+      paddingBottomRight: [60, 150],
       maxZoom: 17,
       animate: false
     });
@@ -273,7 +274,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
         setNote(false);
         break;
       case 'explore':
-        if (selected) onExplore(zones.find((z) => z.id === selected).center);
+        if (selected) onExplore(zones.find((z) => z.id === selected).center, selected);
         break;
       case 'reset':
         Object.keys(filters).forEach((k) => (filters[k] = ''));

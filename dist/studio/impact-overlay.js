@@ -3,29 +3,36 @@ import * as THREE from 'three';
 import { evaluateConstraints, clipToPolygon, constraintShapes } from './constraints.js';
 import { analyzePlacement } from './analysis.js';
 
-const palette = { conflict: '#d93437', review: '#df8616' };
-const fillElevation = 1.85;
-const hatchElevation = 2.24;
-const outlineElevation = 2.74;
+const palette = { conflict: '#eb665b', review: '#efb04c' };
+// All map ink has the same ground registration. Transparent meshes read the
+// solid scene depth and never write it. Their explicit paint order composites
+// the independent analyses. One small clearance clears the raised rail heads.
+const inkHeight = 1.05;
+const cross = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
 
-function triangle(vertices, a, b, c, elevation) {
-  for (const [x, z] of [a, b, c]) vertices.push(x, elevation, z);
+function triangle(vertices, a, b, c) {
+  const winding = cross(a, b, c);
+  if (Math.abs(winding) < 1e-9) return;
+  // Front faces point up, even when two clipping operations have opposite winding.
+  for (const [x, z] of winding < 0 ? [a, b, c] : [a, c, b]) vertices.push(x, inkHeight, z);
 }
 
-function polygon(vertices, ring, elevation) {
-  if (ring.length < 3) return;
-  const indices = THREE.ShapeUtils.triangulateShape(
+function faces(ring) {
+  if (ring.length < 3) return [];
+  return THREE.ShapeUtils.triangulateShape(
     ring.map(([x, z]) => new THREE.Vector2(x, z)),
     []
-  );
-  for (const [a, b, c] of indices) triangle(vertices, ring[a], ring[b], ring[c], elevation);
+  ).map((indices) => indices.map((i) => ring[i]));
 }
 
-function band(vertices, inner, outer, elevation) {
+function polygon(vertices, ring) {
+  for (const [a, b, c] of faces(ring)) triangle(vertices, a, b, c);
+}
+function band(vertices, inner, outer) {
   for (let i = 0; i < inner.length; i++) {
     const j = (i + 1) % inner.length;
-    triangle(vertices, inner[i], outer[i], outer[j], elevation);
-    triangle(vertices, inner[i], outer[j], inner[j], elevation);
+    triangle(vertices, inner[i], outer[i], outer[j]);
+    triangle(vertices, inner[i], outer[j], inner[j]);
   }
 }
 
@@ -41,67 +48,148 @@ function growRectangle(ring, amount) {
   });
 }
 
-// Diagonal stripes stay aligned across adjacent pieces and show the precise
-// intersecting area. A darker corridor extends a short distance beyond it.
-function hatch(vertices, ring, elevation = hatchElevation) {
-  const zs = ring.map((p) => p[1]);
-  const intercept = ring.map(([x, z]) => x - z);
-  const a = Math.min(...zs) - 1,
-    b = Math.max(...zs) + 1;
-  const last = Math.max(...intercept);
-  for (let k = Math.floor(Math.min(...intercept) / 6) * 6; k < last; k += 6) {
-    const stripe = [
-      [a + k, a],
-      [a + k + 2.1, a],
-      [b + k + 2.1, b],
-      [b + k, b]
-    ];
-    polygon(vertices, clipToPolygon(ring, stripe), elevation);
+// Subtract one convex ring from another. Each retained piece is bounded by
+// a different separating edge, so the results cover the difference exactly
+// once. This also deduplicates a complete and a partial feature intersection.
+function subtract(subject, cutter) {
+  const signed = cutter.reduce((sum, a, i) => {
+    const b = cutter[(i + 1) % cutter.length];
+    return sum + a[0] * b[1] - a[1] * b[0];
+  }, 0);
+  const side = signed >= 0 ? 1 : -1;
+  // A separating cutter edge includes the common case of neighboring strips
+  // sharing a boundary. Leave their geometry intact.
+  for (let i = 0; i < cutter.length; i++) {
+    const a = cutter[i],
+      b = cutter[(i + 1) % cutter.length];
+    if (subject.every((p) => cross(a, b, p) * side <= 1e-9)) return [subject];
   }
+  let remaining = subject;
+  const parts = [];
+  for (let i = 0; i < cutter.length && remaining.length >= 3; i++) {
+    const a = cutter[i],
+      b = cutter[(i + 1) % cutter.length],
+      positive = [],
+      negative = [];
+    let start = remaining.at(-1),
+      d0 = cross(a, b, start) * side;
+    for (const end of remaining) {
+      const d1 = cross(a, b, end) * side;
+      if ((d0 > 0 && d1 < 0) || (d0 < 0 && d1 > 0)) {
+        const t = d0 / (d0 - d1),
+          p = [start[0] + t * (end[0] - start[0]), start[1] + t * (end[1] - start[1])];
+        positive.push(p);
+        negative.push(p);
+      }
+      if (d1 >= 0) positive.push(end);
+      if (d1 <= 0) negative.push(end);
+      start = end;
+      d0 = d1;
+    }
+    if (negative.length >= 3) parts.push(negative);
+    remaining = positive;
+  }
+  return parts;
+}
+
+// Triangulating the input handles concave park boundaries. The subtraction
+// matters at crossing rail branches, road junctions and river/freeway overlap.
+function disjointRegions(rings) {
+  const prior = [];
+  const union = [];
+  for (const ring of rings) {
+    const triangles = faces(ring);
+    for (const tri of triangles) {
+      let pieces = [tri];
+      for (const cutter of prior) {
+        pieces = pieces.flatMap((piece) => subtract(piece, cutter));
+        if (!pieces.length) break;
+      }
+      union.push(...pieces);
+    }
+    prior.push(...triangles);
+  }
+  return union;
 }
 
 function paintLayer(group, planes, name, order, opacity, color) {
-  const geometry = new THREE.BufferGeometry();
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
     opacity,
     depthTest: true,
     depthWrite: false,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     toneMapped: false,
     clippingPlanes: planes
   });
-  material.forceSinglePass = true;
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+  mesh.visible = false;
   mesh.name = name;
   mesh.renderOrder = order;
   mesh.frustumCulled = false;
   group.add(mesh);
   return {
     material,
+    mesh,
     set(vertices) {
-      let attr = geometry.getAttribute('position');
+      if (!vertices.length) {
+        mesh.geometry.setDrawRange(0, 0);
+        mesh.visible = false;
+        return;
+      }
+      let attr = mesh.geometry.getAttribute('position');
       if (!attr || attr.array.length < vertices.length) {
-        const count = Math.max(192, 2 ** Math.ceil(Math.log2(Math.max(1, vertices.length))));
-        attr = new THREE.BufferAttribute(new Float32Array(count + ((3 - (count % 3)) % 3)), 3).setUsage(
-          THREE.DynamicDrawUsage
-        );
-        geometry.setAttribute('position', attr);
+        // Disposing before swapping prevents stale GPU buffers on growing drags.
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.BufferGeometry();
+        const size = Math.max(64, 2 ** Math.ceil(Math.log2(vertices.length / 3)));
+        attr = new THREE.BufferAttribute(new Float32Array(size * 3), 3).setUsage(THREE.DynamicDrawUsage);
+        mesh.geometry.setAttribute('position', attr);
       }
       attr.array.set(vertices);
       attr.clearUpdateRanges();
-      if (vertices.length) attr.addUpdateRange(0, vertices.length);
+      attr.addUpdateRange(0, vertices.length);
       attr.needsUpdate = true;
-      geometry.setDrawRange(0, vertices.length / 3);
-      mesh.visible = vertices.length > 0;
+      mesh.geometry.setDrawRange(0, vertices.length / 3);
+      mesh.visible = true;
     }
   };
 }
 
+// Preserve Three's local clipping, color management, and alpha composition.
+// Only the map symbol and its pixel coverage are supplied by these shaders.
+function installInk(material, name, declarations, colorFragment, uniforms = {}) {
+  material.customProgramCacheKey = () => name;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 inkXZ;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ninkXZ=position.xz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 inkXZ;\n' + declarations)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + colorFragment);
+  };
+}
+
+function hatchInk(material, accent) {
+  installInk(
+    material,
+    'datascope-hatching',
+    `
+    uniform vec3 inkAccent;
+    float integratedStripe(float phase) { return floor(phase)*0.31+min(fract(phase),0.31); }
+  `,
+    `
+    float phase = (inkXZ.x-inkXZ.y)/6.0;
+    float span = max(0.0001,fwidth(phase));
+    float coverage = clamp((integratedStripe(phase+span*.5)-integratedStripe(phase-span*.5))/span,0.,1.);
+    diffuseColor.rgb = mix(diffuseColor.rgb,inkAccent,coverage);
+    diffuseColor.a = mix(diffuseColor.a,.94,coverage);
+  `,
+    { inkAccent: { value: new THREE.Color(accent) } }
+  );
+}
 // The outer ring spans the district. Triangulating its parcel-shaped hole once
 // lets us clip the outside region exactly, including the parcel's concave notch.
 const surround = [
@@ -117,55 +205,73 @@ const outsideTriangles = THREE.ShapeUtils.triangulateShape(vecs(surround), [vecs
   indices.map((i) => points[i])
 );
 
-function paintOutside(footprint, shade, pattern, edge) {
+function paintOutside(footprint, shade, edge) {
   const outer = growRectangle(footprint, 2.55);
   for (const tri of outsideTriangles) {
-    const outside = clipToPolygon(tri, footprint);
-    polygon(shade, outside, 1.56);
-    if (outside.length >= 3) hatch(pattern, outside, 1.72);
+    polygon(shade, clipToPolygon(tri, footprint));
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4;
-      polygon(edge, clipToPolygon(tri, [footprint[i], footprint[j], outer[j], outer[i]]), 3.1);
+      polygon(edge, clipToPolygon(tri, [footprint[i], footprint[j], outer[j], outer[i]]));
     }
   }
 }
 
-function stroke(vertices, a, b, width, elevation) {
-  const dx = b[0] - a[0],
-    dz = b[1] - a[1],
-    length = Math.hypot(dx, dz);
-  if (length < 0.001) return;
-  const x = (-dz * width) / (2 * length),
-    z = (dx * width) / (2 * length);
-  const ring = [
-    [a[0] - x, a[1] - z],
-    [b[0] - x, b[1] - z],
-    [b[0] + x, b[1] + z],
-    [a[0] + x, a[1] + z]
-  ];
-  triangle(vertices, ring[0], ring[1], ring[2], elevation);
-  triangle(vertices, ring[0], ring[2], ring[3], elevation);
-}
-
-function paintMeasure({ footprint: a, river: b }, vertices, width, elevation) {
-  const dx = b[0] - a[0],
-    dz = b[1] - a[1],
-    length = Math.hypot(dx, dz);
-  if (length < 0.001) {
-    // At a crossing both nearest points coincide. Draw a single target.
-    const ring = Array.from({ length: 24 }, (_, i) => {
-      const t = (i * Math.PI) / 12;
-      return [Math.cos(t), Math.sin(t)];
-    });
-    const radius = 4.4;
-    const atRadius = (r) => ring.map(([x, z]) => [a[0] + x * r, a[1] + z * r]);
-    band(vertices, atRadius(radius - width / 2), atRadius(radius + width / 2), elevation);
-    return;
-  }
-  stroke(vertices, a, b, width, elevation);
-  const x = (-dz / length) * 5.6,
-    z = (dx / length) * 5.6;
-  for (const p of [a, b]) stroke(vertices, [p[0] - x, p[1] - z], [p[0] + x, p[1] + z], width, elevation);
+function dimensionInk(layer) {
+  const uniforms = {
+    inkStart: { value: new THREE.Vector2() },
+    inkAxis: { value: new THREE.Vector2() },
+    inkLength: { value: 0 },
+    inkOutline: { value: new THREE.Color('#12434d') }
+  };
+  installInk(
+    layer.material,
+    'datascope-river-ruler',
+    `
+    uniform vec2 inkStart, inkAxis;
+    uniform float inkLength;
+    uniform vec3 inkOutline;
+    float boxDistance(vec2 point,vec2 halfSize) {
+      vec2 d=abs(point)-halfSize;
+      return length(max(d,0.0))+min(max(d.x,d.y),0.);
+    }
+  `,
+    `
+    vec2 delta=inkXZ-inkStart;
+    vec2 rel=vec2(dot(delta,inkAxis),dot(delta,vec2(-inkAxis.y,inkAxis.x)));
+    float dist;
+    if (inkLength<.001) {
+      dist = abs(length(delta)-4.4)-.8;
+    } else {
+      float center=boxDistance(rel-vec2(inkLength*.5,0.),vec2(inkLength*.5,.8));
+      float ticks=boxDistance(vec2(min(abs(rel.x),abs(rel.x-inkLength)),rel.y),vec2(.8,5.6));
+      dist=min(center,ticks);
+    }
+    float aa=max(.015,fwidth(dist));
+    float outline=1.-smoothstep(.8-aa*.5,.8+aa*.5,dist);
+    float core=1.-smoothstep(-aa*.5,aa*.5,dist);
+    if (outline<.001) discard;
+    diffuseColor.rgb=mix(inkOutline,diffuseColor.rgb,core);
+    diffuseColor.a*=outline;
+  `,
+    uniforms
+  );
+  return (witness) => {
+    const vertices = [];
+    if (witness) {
+      const { footprint: a, river: b } = witness;
+      const dx = b[0] - a[0],
+        dz = b[1] - a[1],
+        length = Math.hypot(dx, dz);
+      const x = length ? dx / length : 1,
+        z = length ? dz / length : 0;
+      uniforms.inkStart.value.set(...a);
+      uniforms.inkAxis.value.set(x, z);
+      uniforms.inkLength.value = length;
+      const at = (u, v) => [a[0] + u * x - v * z, a[1] + u * z + v * x];
+      polygon(vertices, [at(-10, -10), at(length + 10, -10), at(length + 10, 10), at(-10, 10)]);
+    }
+    layer.set(vertices);
+  };
 }
 
 export function createImpactOverlay(cropPlanes) {
@@ -175,29 +281,32 @@ export function createImpactOverlay(cropPlanes) {
     water = new THREE.Group(),
     lot = new THREE.Group();
   group.add(collisions, water, lot);
-  const witnessHalo = paintLayer(water, cropPlanes, 'Measurement line halo', 30, 0.96, '#f2f6db');
-  const witnessInk = paintLayer(water, cropPlanes, 'River clearance and endpoints', 31, 1, '#146c75');
-  const outerShade = paintLayer(lot, cropPlanes, 'Footprint outside parcel', 17, 0.42, '#ca812e');
-  const outerHatch = paintLayer(lot, cropPlanes, 'Outside-parcel hatching', 18, 0.92, '#ffd381');
-  const outerEdge = paintLayer(lot, cropPlanes, 'Outside-parcel edge', 26, 0.97, '#d48111');
+  group.visible = false;
+  const ruler = paintLayer(water, cropPlanes, 'River clearance and endpoints', 30, 1, '#99f4ed');
+  const paintMeasure = dimensionInk(ruler);
+  const outerShade = paintLayer(lot, cropPlanes, 'Footprint outside parcel', 17, 0.51, '#a76a24');
+  hatchInk(outerShade.material, '#ffd485');
+  const outerEdge = paintLayer(lot, cropPlanes, 'Outside-parcel edge', 26, 0.97, '#f5b758');
   const corridor = paintLayer(
     collisions,
     cropPlanes,
     'Affected physical features',
     21,
-    0.46,
+    0.54,
     palette.conflict
   );
-  const fill = paintLayer(collisions, cropPlanes, 'Overlapping ground', 22, 0.79, palette.conflict);
-  const stripes = paintLayer(collisions, cropPlanes, 'Intersection hatching', 23, 0.94, '#fff0ce');
+  const fill = paintLayer(collisions, cropPlanes, 'Overlapping ground', 22, 0.83, palette.conflict);
+  hatchInk(fill.material, '#ffe6b3');
   const perimeter = paintLayer(collisions, cropPlanes, 'Footprint perimeter', 24, 0.98, palette.conflict);
-  const trim = paintLayer(collisions, cropPlanes, 'Footprint highlight edge', 25, 0.91, '#fff4e3');
+  const trim = paintLayer(collisions, cropPlanes, 'Footprint highlight edge', 25, 0.91, '#ffe6cd');
+  let disposed = false;
   let key, lensKey, result;
 
   function update(
     { point, angle = 0 },
     { enabled = true, lens, showRiver = true, showParcel = true, analysis } = {}
   ) {
+    if (disposed) return result;
     const next = point ? [point[0], point[1], angle].join('|') : 'no-build';
     if (next !== key) {
       key = next;
@@ -216,21 +325,20 @@ export function createImpactOverlay(cropPlanes) {
         ];
         const context = [],
           intersect = [],
-          pattern = [],
           edge = [],
           border = [];
-        for (const { feature, clipped } of result.overlaps) {
-          polygon(context, clipToPolygon(feature, nearFootprint), 1.34);
-          polygon(intersect, clipped, fillElevation);
-          hatch(pattern, clipped);
+        const rings = result.overlaps.map(({ feature }) => clipToPolygon(feature, nearFootprint));
+        for (const region of disjointRegions(rings)) {
+          // The corridor tint stops where the stronger footprint fill starts.
+          for (const surrounding of subtract(region, footprint)) polygon(context, surrounding);
+          polygon(intersect, clipToPolygon(region, footprint));
         }
         const rim = growRectangle(footprint, 3.0);
-        band(edge, growRectangle(footprint, 0.8), rim, outlineElevation);
-        band(border, rim, growRectangle(footprint, 3.75), outlineElevation + 0.16);
+        band(edge, growRectangle(footprint, 0.8), rim);
+        band(border, rim, growRectangle(footprint, 3.75));
         for (const layer of [corridor, fill, perimeter]) layer.material.color.set(palette[result.status]);
         corridor.set(context);
         fill.set(intersect);
-        stripes.set(pattern);
         perimeter.set(edge);
         trim.set(border);
       }
@@ -244,27 +352,31 @@ export function createImpactOverlay(cropPlanes) {
       if (water.visible) {
         const witness = (analysis || analyzePlacement({ point, angle })).riverWitness;
         group.userData.riverWitness = witness;
-        const halo = [],
-          ink = [];
-        if (witness) {
-          paintMeasure(witness, halo, 3.2, 3.42);
-          paintMeasure(witness, ink, 1.55, 3.58);
-        }
-        witnessHalo.set(halo);
-        witnessInk.set(ink);
+        paintMeasure(witness);
       } else group.userData.riverWitness = null;
       if (lot.visible) {
         const shade = [],
-          pattern = [],
           edge = [];
-        paintOutside(result.footprint, shade, pattern, edge);
+        paintOutside(result.footprint, shade, edge);
         outerShade.set(shade);
-        outerHatch.set(pattern);
         outerEdge.set(edge);
       }
     }
     group.visible = collisions.visible || water.visible || lot.visible;
     return result;
   }
-  return { group, update };
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    group.visible = false;
+    group.removeFromParent();
+    group.traverse((object) => {
+      if (object.isMesh) {
+        object.geometry.dispose();
+        object.material.dispose();
+      }
+    });
+    group.clear();
+  }
+  return { group, update, dispose };
 }

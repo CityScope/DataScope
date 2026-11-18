@@ -11,7 +11,8 @@ import {
   parseWorkshop,
   serializeWorkshop,
   isStudyPoint,
-  WORKSHOP_LIMITS
+  WORKSHOP_LIMITS,
+  setbackOption
 } from './workshop.js';
 
 const $ = (id) => document.getElementById(id);
@@ -53,6 +54,7 @@ const noBuild = () => state.active === 'none';
 
 function scenarioName(which = state.active) {
   if (which === 'proposal') return 'Proposed site';
+  if (which === 'setback') return setbackOption.name;
   if (which === 'custom') return 'My placement';
   if (which === 'none') return 'No build';
   return state.scenarios.find((s) => s.id === which)?.name || 'Saved placement';
@@ -108,6 +110,7 @@ function addressLink() {
 function renderControls() {
   const opts = [
     ['proposal', 'Proposed site'],
+    ['setback', setbackOption.name],
     ['custom', 'My placement'],
     ['none', 'No build'],
     ...state.scenarios.map((s) => [s.id, s.name])
@@ -150,13 +153,14 @@ function renderMetrics(point = state.point) {
       : 'No mapped conflict';
   banner.title = hasFinding
     ? check.items.map((item) => item.detail).join(' ')
-    : 'Screens the mapped railway, river, roads and selected community land uses.';
+    : 'Screens the modeled railway, river, roads and selected buildings and community land uses.';
   document
     .querySelector('.resources')
     .style.setProperty('--electricity', Math.min(100, (result.energyGWh / 200) * 100) + '%');
   document
     .querySelector('.resources')
     .style.setProperty('--water-demand', Math.min(100, ((result.waterMGal || 0) / 3) * 100) + '%');
+  document.querySelector('.resources').dataset.waterUnknown = result.waterMGal === null;
   const inspect = ui.camera === 'building' && point;
   const questions = [
     [
@@ -168,8 +172,10 @@ function renderMetrics(point = state.point) {
     ],
     [
       'How close is the river?',
-      displayNumber(result.riverSetbackM == null ? null : result.riverSetbackM * 3.28084) +
-        ' ft from the building edge to the mapped river centerline.'
+      result.riverOutOfCoverage
+        ? 'Beyond mapped river coverage. Move the facility back into the illustrated district.'
+        : displayNumber(result.riverSetbackM == null ? null : result.riverSetbackM * 3.28084) +
+          ' ft from the building edge to the mapped river centerline.'
     ],
     [
       'Does the building fit here?',
@@ -350,9 +356,18 @@ function changeView(view, notify = true) {
     sentiment ??= createSentiment($('sentiment'), {
       onNote: addNoteAt,
       onMarker: showNote,
-      onExplore: (point) => {
+      onExplore: (point, zoneId) => {
+        const receptor = { park: 'riel', school: 'melvindale', maple: 'maple' }[zoneId];
+        if (receptor) {
+          ui.receptorId = receptor;
+          $('receiver').value = receptor;
+        }
+        question = zoneId === 'river' ? 1 : zoneId === 'enterprise' ? 2 : 0;
         changeView('studio');
-        focusPoint(point);
+        drawMap();
+        renderMetrics();
+        if (ui.view === 'studio') studio.view('district');
+        else focusPoint(point);
       }
     });
     sentiment.showNotes(state.notes);
@@ -409,6 +424,8 @@ function choose(key) {
     ui.mode = 'place';
   } else if (key === 'none')
     Object.assign(state, { active: 'none', point: null, angle: 0, design: 'reference' });
+  else if (key === 'setback')
+    Object.assign(state, { active: key, point: [...setbackOption.point], angle: setbackOption.angle, design: setbackOption.design });
   else if (key === 'proposal')
     Object.assign(state, { active: key, point: [...site.center], angle: 0, design: 'reference' });
   else {
@@ -541,6 +558,7 @@ function saveOption() {
 function compare() {
   const options = [
     { name: 'Proposed site', point: site.center, angle: 0, design: 'reference' },
+    setbackOption,
     { name: 'No build', point: null, angle: 0, design: 'reference' },
     ...state.scenarios
   ];
@@ -562,7 +580,7 @@ function compare() {
         '</td><td>' +
         number(a.soundDbA, 'dBA', 1) +
         '</td><td>' +
-        number(a.riverSetbackM == null ? null : a.riverSetbackM * 3.28084, 'ft') +
+        (a.riverOutOfCoverage ? 'Beyond coverage' : number(a.riverSetbackM == null ? null : a.riverSetbackM * 3.28084, 'ft')) +
         '</td><td>' +
         number(a.parcelCoveragePct, '%') +
         '</td><td>' +
@@ -579,7 +597,7 @@ function compare() {
       escapeHTML(places.find((p) => p.id === ui.receptorId).name) +
       '. Resource estimates are annual.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Placement check</th><th>Sound</th><th>River clearance</th><th>Inside parcel</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
       body +
-      '</tbody></table></div><p class="minor">Save more placements to include them here. No build adds zero water and electricity demand.</p>',
+      '</tbody></table></div><p class="minor">The southwest setback is an illustrative placement, not an approved alternative. Save more placements to include them here. No build adds zero water and electricity demand.</p>',
     true
   );
 }

@@ -1,6 +1,7 @@
 // Geometry uses local east/north meters. A positive bearing turns the facility
 // clockwise from north, matching the footprint in the 2D and 3D views.
 import { site, places, river } from '../geography.js';
+import { modelBounds } from './model-data.js';
 
 const DEG = Math.PI / 180;
 const METERS_LAT = 111320;
@@ -27,7 +28,7 @@ export const analysisMethods = {
   },
   water: {
     title: 'River clearance',
-    text: 'Shortest straight-line distance from the rotated workshop footprint to the locally mapped Ecorse River centerline. A crossing or overlap gives zero. Banks, wetlands, flood elevations and regulatory setbacks require additional data.',
+    text: 'Shortest straight-line distance from the rotated workshop footprint to the locally mapped Ecorse River centerline. A crossing or overlap gives zero. Values are shown only within the illustrated district; the mapped reach is not a complete river network. Banks, wetlands, flood elevations and regulatory setbacks require additional data.',
     url: 'https://gisp.mcgi.state.mi.us/arcgis/rest/services/BaseMap/CommonQueries/MapServer/15'
   },
   parcel: {
@@ -196,7 +197,9 @@ function evaluate(point, angle, design, receptorId) {
       north = y - center[1];
     return [east * cos - north * sin, east * sin + north * cos];
   };
-  const nearest = riverClearance(reach.map(inFacilityFrame));
+  const footprint = CORNERS.map(([x, y]) => [center[0] + x * cos + y * sin, -center[1] + x * sin - y * cos]);
+  const riverOutOfCoverage = footprint.some(([x, z]) => x < modelBounds.west || x > modelBounds.east || z < modelBounds.north || z > modelBounds.south);
+  const nearest = riverOutOfCoverage ? null : riverClearance(reach.map(inFacilityFrame));
   // The scene uses east/south meter coordinates. These endpoints come from
   // the same nearest-point calculation as the clearance reported to residents.
   const toScene = ([x, y]) => [center[0] + x * cos + y * sin, -center[1] + x * sin - y * cos];
@@ -207,6 +210,7 @@ function evaluate(point, angle, design, receptorId) {
     sourcePoint: toLatLng(source),
     soundNearField: distance < REFERENCE_DISTANCE,
     soundDbA: REFERENCE_DB - 20 * Math.log10(Math.max(distance, REFERENCE_DISTANCE) / REFERENCE_DISTANCE),
+    riverOutOfCoverage,
     riverSetbackM: nearest?.distance ?? null,
     riverWitness: nearest ? { footprint: toScene(nearest.footprint), river: toScene(nearest.river) } : null,
     parcelCoveragePct: footprintCoverage(parcel.map(inFacilityFrame)),

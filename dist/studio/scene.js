@@ -64,11 +64,12 @@ function roundedPlinth(width, depth, height, top, color) {
   outline.quadraticCurveTo(-w, d, -w, d - radius);
   outline.lineTo(-w, -d + radius);
   outline.quadraticCurveTo(-w, -d, -w + radius, -d);
+  const bevel = Math.min(0.28, height * 0.2);
   const geometry = new THREE.ExtrudeGeometry(outline, {
-    depth: height,
+    depth: height - 2 * bevel,
     bevelEnabled: true,
-    bevelThickness: 0.45,
-    bevelSize: 0.45,
+    bevelThickness: bevel,
+    bevelSize: bevel,
     bevelSegments: 2,
     curveSegments: 5
   });
@@ -77,7 +78,7 @@ function roundedPlinth(width, depth, height, top, color) {
     geometry,
     new THREE.MeshStandardMaterial({ color, roughness: 0.52, metalness: 0.24 })
   );
-  object.position.y = top - height;
+  object.position.y = top - height + bevel;
   object.receiveShadow = true;
   object.castShadow = true;
   return object;
@@ -203,9 +204,9 @@ function makeStudioEnvironment(renderer, scene) {
 }
 
 function makeStudioLights(scene, narrow) {
-  const hemi = new THREE.HemisphereLight('#e8f4f5', '#8f9680', 1.23);
+  const hemi = new THREE.HemisphereLight('#e8f4f5', '#a5b7b0', 1.23);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight('#ffeed1', 2.43);
+  const key = new THREE.DirectionalLight('#f6faf7', 2.25);
   key.castShadow = true;
   key.shadow.mapSize.setScalar(narrow ? 1024 : 2048);
   key.shadow.normalBias = 0.16;
@@ -361,7 +362,7 @@ export function makeScene(
   controls.zoomSpeed = 1.05;
   controls.panSpeed = 0.87;
   controls.zoomToCursor = false;
-  scene.background = new THREE.Color('#b0d4d3');
+  scene.background = new THREE.Color('#dce9e6');
   scene.fog = null;
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.8));
   renderer.shadowMap.enabled = true;
@@ -377,9 +378,9 @@ export function makeScene(
   scene.add(district);
   const setDistrictBatches = districtBatches(district);
   const tile = new THREE.Group();
-  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.8, HALF_TILE_Z * 2 + 1.8, 4.4, -0.64, '#a8a58f'));
-  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.4, HALF_TILE_Z * 2 + 1.4, 0.79, -5.66, '#e3d5ae'));
-  tile.add(roundedPlinth(HALF_TILE_X * 2 - 1.5, HALF_TILE_Z * 2 - 1.5, 1.75, -7.13, '#607d78'));
+  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.8, HALF_TILE_Z * 2 + 1.8, 4.4, -0.64, '#aebfb8'));
+  tile.add(roundedPlinth(HALF_TILE_X * 2 + 1.4, HALF_TILE_Z * 2 + 1.4, 0.79, -5.66, '#d8e5de'));
+  tile.add(roundedPlinth(HALF_TILE_X * 2 - 1.5, HALF_TILE_Z * 2 - 1.5, 1.75, -7.13, '#819b92'));
   const tableShade = contactPatch(HALF_TILE_X * 2, HALF_TILE_Z * 2, 24, 0.22);
   tableShade.position.y = -10.16;
   tile.add(tableShade);
@@ -771,7 +772,7 @@ export function makeScene(
     sound.position.copy(toLocal(source));
     contour.where.copy(sound.position).add(new THREE.Vector3(-40, 0, 25.5));
     sound.visible =
-      facilityAnchor.visible && state.layers?.sound !== false && state.layers?.noise !== false;
+      activeView !== 'building' && facilityAnchor.visible && state.layers?.sound !== false && state.layers?.noise !== false;
     const receiver = places.find((p) => p.id === state.receptorId) || places[0];
     const end = toLocal([receiver.lat, receiver.lng], 0.88);
     const start = sound.position;
@@ -821,6 +822,7 @@ export function makeScene(
       center ||
       (state.point && within(toLocal(state.point), BOARD) ? toLocal(state.point) : new THREE.Vector3());
     activeView = name;
+    setFacility(livePoint || state.point);
     const target = name === 'district' ? new THREE.Vector3(120, 0, -100) : point.clone();
     // The inspection tile preserves a strip of the western equipment yard and access road.
     if (name === 'site') {
@@ -1064,6 +1066,7 @@ export function makeScene(
       resizeObserver.disconnect();
       controls.dispose();
       environment.dispose();
+      impact.dispose();
       disposeTree(scene);
       renderer.dispose();
       canvas.remove();

@@ -103,7 +103,7 @@ export function createReadouts(container, resourceContainer) {
       unit.hidden = n == null;
       change.textContent =
         n == null
-          ? 'No facility'
+          ? c.key === 'water' && result.riverOutOfCoverage ? 'Beyond river coverage' : 'No facility'
           : rounded === 0
             ? 'At reference'
             : (rounded > 0 ? '+' : '−') + displayNumber(Math.abs(rounded), c.digits) + ' ' + c.deltaUnit;

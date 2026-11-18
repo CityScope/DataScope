@@ -1,3 +1,4 @@
+import { industrialStructures, schoolStructures, seniorStructures } from './model-data.js';
 // Original architectural miniatures. Neighborhood massing is generalized from the
 // city planning exhibit for orientation, not a building inventory or engineering plan.
 import * as THREE from 'three';
@@ -78,6 +79,23 @@ function modelParts(group) {
       );
     return key;
   }
+  // Small markings live on the component's own surface. Mipmaps filter them
+  // as the workshop camera moves between a roof detail and a district view.
+  function printed(name, color, width, height, draw, roughness = 0.75) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const pen = canvas.getContext('2d');
+    pen.fillStyle = color;
+    pen.fillRect(0, 0, width, height);
+    draw(pen, width, height);
+    const map = new THREE.CanvasTexture(canvas);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.anisotropy = 8;
+    map.minFilter = THREE.LinearMipmapLinearFilter;
+    colors.set(name, new THREE.MeshStandardMaterial({ map, color: 0xffffff, roughness }));
+    return name;
+  }
   const box = (...a) => add(cube, ...a),
     cyl = (...a) => add(cylinder, ...a);
   const ring = (...a) => add(torus, ...a),
@@ -103,6 +121,7 @@ function modelParts(group) {
     stock,
     finish,
     taper: (...a) => add(taperedStack, ...a),
+    printed,
     wedge: (...a) => add(shed, ...a)
   };
 }
@@ -125,54 +144,131 @@ const equipmentKeys = {
 };
 const envelopes = {
   reference: {
-    cladding: '#b9ccd2',
-    frame: '#476477',
-    equipment: '#56869e',
-    trim: '#eaece5',
-    pipe: '#d2a453'
+    cladding: '#bacad0',
+    frame: '#476776',
+    equipment: '#54829a',
+    trim: '#e3e9e7',
+    pipe: '#bfaa79'
   },
   efficient: {
-    cladding: '#afc5b1',
-    frame: '#3f625b',
-    equipment: '#73a591',
-    trim: '#f4f0d8',
+    cladding: '#b5c7c6',
+    frame: '#4b6d70',
+    equipment: '#64a09b',
+    trim: '#e4eae3',
     pipe: '#bf965c'
   },
-  dry: { cladding: '#c9b4a5', frame: '#775447', equipment: '#ac6949', trim: '#e7e3d7', pipe: '#84aaa6' }
+  dry: { cladding: '#c2c7c6', frame: '#736657', equipment: '#b18453', trim: '#e7eae4', pipe: '#84aaa6' }
 };
 
 export function createFacility(design = 'reference') {
   if (!Object.hasOwn(envelopes, design)) design = 'reference';
   const group = new THREE.Group();
   group.name = 'Movable data center';
-  const { box: b, cyl, ring, taper, wedge, stock, finish } = modelParts(group);
+  const { box: b, cyl, ring, taper, wedge, stock, printed, finish } = modelParts(group);
   const colors = envelopes[design];
   const wall = stock(colors.cladding, 0.77),
     trim = stock(colors.trim, 0.56, 0.13);
   const frame = stock(colors.frame, 0.59, 0.21),
     enamel = stock(colors.equipment, 0.48, 0.24);
-  const gutter = stock('#3b525d', 0.68, 0.14),
+  const gutter = stock('#425966', 0.68, 0.14),
     metal = stock('#b7c8c7', 0.52, 0.34);
   const pipe = stock(colors.pipe, 0.55, 0.23),
-    rail = stock('#d8c198', 0.55, 0.19);
+    rail = stock('#bcb6a1', 0.55, 0.19);
   const glass = stock('#264e5b', 0.25, 0.32),
-    litGlass = stock('#8aa9a5', 0.34, 0.24);
-  const warmGlass = stock('#bba982', 0.38, 0.14),
-    blade = stock('#92a6ab', 0.56, 0.24);
-  const dark = stock('#283940', 0.8, 0.12),
-    roof = stock('#808988', 0.86, 0.08);
-  const base = stock('#97a09c', 0.93),
-    apron = stock('#6a7472', 0.94);
-  const stripe = stock('#ece8cf', 0.86),
-    fluorescent = stock('#f4dc9b', 0.41, 0.1, '#aa813c');
+    litGlass = stock('#93adad', 0.34, 0.24);
+  const warmGlass = stock('#bba982', 0.38, 0.14);
+  const dark = stock('#283940', 0.8, 0.12);
+  const base = stock('#97a09c', 0.93);
+  const fluorescent = stock('#f4dc9b', 0.41, 0.1, '#aa813c');
+  function membrane(pen, width, height) {
+    pen.fillStyle = '#556671';
+    for (let x = 28; x < width; x += 42) pen.fillRect(x, 0, 2, height);
+    pen.fillStyle = '#92a0a6';
+    for (let x = 30; x < width; x += 42) pen.fillRect(x, 0, 2, height);
+    pen.fillStyle = '#62717b';
+    for (let y = 63; y < height; y += 116) pen.fillRect(0, y, width, 2);
+  }
+  const roofSkin = printed('Roof membrane', '#7b8991', 512, 1024, membrane);
+  const officeSkin = printed('Office membrane', '#7f8c93', 512, 256, membrane);
+  const grille = printed('Recessed intake louvers', '#324957', 256, 128, (pen) => {
+    for (let y = 11; y < 126; y += 21) {
+      pen.fillStyle = '#9aabb0';
+      pen.fillRect(5, y, 246, 6);
+      pen.fillStyle = '#5a717c';
+      pen.fillRect(5, y + 6, 246, 3);
+    }
+  });
+  const fanSkin = printed(
+    'Axial fan and guard',
+    '#a6b6b8',
+    256,
+    256,
+    (pen) => {
+      pen.translate(128, 128);
+      function disk(r, color) {
+        pen.fillStyle = color;
+        pen.beginPath();
+        pen.arc(0, 0, r, 0, 2 * Math.PI);
+        pen.fill();
+      }
+      disk(125, '#b9c6c7');
+      disk(117, '#415661');
+      disk(109, '#273d4b');
+      for (let i = 0; i < 7; i++) {
+        pen.rotate((2 * Math.PI) / 7);
+        pen.fillStyle = '#9bafba';
+        pen.beginPath();
+        pen.moveTo(-10, 19);
+        pen.quadraticCurveTo(-48, 43, -39, 91);
+        pen.quadraticCurveTo(-14, 105, 15, 95);
+        pen.quadraticCurveTo(-1, 67, 8, 25);
+        pen.closePath();
+        pen.fill();
+      }
+      pen.strokeStyle = '#8599a0';
+      pen.lineWidth = 1.6;
+      for (const r of [52, 76, 98]) {
+        pen.beginPath();
+        pen.arc(0, 0, r, 0, 2 * Math.PI);
+        pen.stroke();
+      }
+      disk(20, '#768e97');
+      disk(13, '#ced6cf');
+      for (let i = 0; i < 12; i++) {
+        const a = (i * Math.PI) / 6;
+        pen.fillStyle = '#5f7279';
+        pen.fillRect(Math.cos(a) * 120 - 2, Math.sin(a) * 120 - 2, 4, 4);
+      }
+    },
+    0.55
+  );
+  const apronSkin = printed('Entry and parking marks', '#687983', 512, 1024, (pen, w, h) => {
+    pen.translate(w / 2, h / 2);
+    pen.scale(w / 46, h / 90);
+    pen.fillStyle = '#c8cfc8';
+    for (let z = 28.8; z < 44; z += 2.75) pen.fillRect(-21.38, z, 7.28, 0.15);
+    for (let x = 6.3; x < 18; x += 1.47) pen.fillRect(x, 41.71, 0.58, 3);
+  });
+  const yardSkin = printed('Mechanical yard pavement', '#8f9fa5', 256, 768, (pen, w, h) => {
+    pen.translate(w / 2, h / 2);
+    pen.scale(w / 10.15, h / 69.35);
+    pen.fillStyle = '#c8d2ca';
+    for (const z of [-31, -12, 7, 26])
+      for (let x = -3.6; x < 4; x += 1.04) {
+        pen.save();
+        pen.translate(x, z);
+        pen.rotate(-0.52);
+        pen.fillRect(-0.19, -1, 0.38, 2);
+        pen.restore();
+      }
+  });
   // A removable pad, masonry plinth and inset low office keep a human scale.
-  b(dark, 0, 0.1, 0, 46, 0.2, 90);
-  b(apron, 0, 0.24, 0, 45.8, 0.14, 89.8);
-  b(base, 5, 0.57, -6, 34.1, 0.55, 71.1);
+  b(apronSkin, 0, 0.155, 0, 46, 0.31, 90);
+  b(base, 5, 0.61, -6, 34.1, 0.6, 71.1);
   b(frame, 5, 1.55, -6, 33.6, 1.52, 70.5);
   b(wall, 5, 5.98, -6, 33.15, 7.75, 70.25);
   b(dark, 5, 9.99, -6, 33.7, 0.36, 70.8);
-  b(roof, 5, 10.22, -6, 33.45, 0.24, 70.6);
+  b(roofSkin, 5, 10.22, -6, 33.45, 0.24, 70.6);
   for (const side of [-1, 1]) {
     const x = 5 + side * 16.62;
     b(frame, x, 9.35, -6, 0.3, 0.64, 70.4);
@@ -183,16 +279,12 @@ export function createFacility(design = 'reference') {
       b(frame, x + side * 0.16, 5.75, z, 0.14, 7.2, 0.13);
       b(trim, x + side * 0.35, 5.83, z - 0.18, 0.64, 7.42, 0.17);
       b(glass, x + side * 0.11, 8.42, z + 2.75, 0.12, 0.85, 5.2);
-      b(litGlass, x + side * 0.19, 8.48, z + 1.15, 0.08, 0.67, 1.8);
+      b(litGlass, x + side * 0.26, 8.48, z + 1.15, 0.08, 0.67, 1.8);
       if (i % 2 === 0) {
-        b(dark, x + side * 0.15, 4.33, z + 2.75, 0.14, 2.75, 4.7);
-        for (let k = 0; k < 6; k++)
-          b(metal, x + side * 0.27, 3.17 + k * 0.45, z + 2.75, 0.21, 0.11, 4.48);
+        b(grille, x + side * 0.25, 4.33, z + 2.75, 0.24, 2.75, 4.7);
       }
     }
   }
-  for (let x = -9.5; x <= 21; x += 1.93) b(metal, x, 10.38, -6, 0.1, 0.1, 69.6);
-  for (let z = -37; z < 29; z += 8.2) b(gutter, 5, 10.39, z, 32.5, 0.06, 0.13);
   for (const x of [-4, 7.1, 16.5]) {
     b(dark, x, 3.16, -41.21, 4.2, 4.5, 0.22);
     for (let y = 1.11; y < 5.45; y += 0.43) b(metal, x, y, -41.36, 3.75, 0.18, 0.11);
@@ -200,70 +292,54 @@ export function createFacility(design = 'reference') {
   }
   // South-facing administrative wing with recessed glazing, irregular warm panes,
   // laminated sunshades, a deep canopy and a narrow illuminated entrance band.
-  b(base, 4.25, 0.52, 33.8, 35.25, 0.72, 17.4);
-  b(glass, 4.25, 4.05, 33.55, 34.43, 6.47, 16.25);
-  b(wall, 4.25, 1.23, 33.54, 34.63, 0.91, 16.47);
+  b(base, 4.25, 0.6, 36.065, 35.25, 0.58, 12.87);
+  b(glass, 4.25, 4.52, 35.58, 34.43, 5.58, 12.19);
+  b(wall, 4.25, 1.31, 35.64, 34.63, 0.84, 12.27);
   for (let x = -11.15, i = 0; x < 21.2; x += 2.77, i++) {
     b(metal, x, 4.4, 41.77, 0.15, 5.51, 0.2);
     if (i % 4 !== 1) b(i % 4 === 0 ? warmGlass : litGlass, x + 1.31, 5.77, 41.73, 2.48, 1.58, 0.15);
-    if (i % 3 !== 0) b(enamel, x + 0.05, 5.05, 42.16, 0.15, 3.91, 0.93);
+    if (i % 3 !== 0) b(enamel, x + 0.2, 5.05, 42.36, 0.16, 3.91, 0.73);
   }
-  for (let z = 26.3; z < 41.3; z += 2.8) {
-    b(metal, -13.03, 4.45, z, 0.16, 5.46, 0.16);
-    b(litGlass, -13.01, 5.8, z + 1.32, 0.16, 1.55, 2.53);
+  for (let z = 29.91; z < 41.0; z += 2.8) {
+    b(metal, -13.085, 4.58, z, 0.24, 5.46, 0.16);
+    b(litGlass, -13.01, 5.8, z + 1.39, 0.16, 1.55, 2.49);
   }
-  b(frame, 4.25, 7.28, 33.55, 35.12, 0.52, 16.97);
-  b(trim, 4.25, 7.61, 33.55, 35.4, 0.29, 17.28);
-  b(roof, 4.25, 7.8, 33.55, 34.72, 0.12, 16.65);
+  b(frame, 4.25, 7.44, 35.7, 35.12, 0.28, 12.67);
+  b(trim, 4.25, 7.68, 35.77, 35.4, 0.2, 12.83);
+  b(officeSkin, 4.25, 7.88, 35.77, 34.34, 0.2, 12.4);
   // Low daylight monitors bring a different scale to the public-facing wing.
   for (const x of [-4.35, 9.2]) {
-    b(frame, x, 8.03, 34.42, 7.75, 0.29, 4.4);
+    b(frame, x, 8.09, 34.42, 7.75, 0.22, 4.4);
     wedge(metal, x, 8.62, 34.42, 7.36, 0.83, 4.05);
     const tilt = -Math.atan(0.83 / 4.05);
     b(glass, x, 8.74, 34.42, 7.44, 0.11, 4.18, 0, tilt);
     for (const dx of [-2.46, 0, 2.46]) b(litGlass, x + dx, 8.82, 34.42, 2.22, 0.055, 3.87, 0, tilt);
     b(trim, x, 9.18, 36.49, 7.65, 0.14, 0.22);
   }
-  for (const side of [-1, 1]) b(trim, 4.25 + side * 17.3, 7.97, 33.55, 0.22, 0.44, 16.89);
-  for (let x = -11.1; x < 20; x += 3.16) b(metal, x, 7.88, 33.55, 0.09, 0.08, 16.25);
-  b(metal, 4.25, 5.03, 41.84, 34.38, 0.12, 0.19);
+  for (const side of [-1, 1]) b(trim, 4.25 + side * 17.3, 8.05, 35.77, 0.22, 0.53, 12.77);
+
+  b(metal, 4.25, 4.84, 41.84, 34.38, 0.12, 0.19);
   b(enamel, -4.43, 4.24, 42.91, 13.11, 0.26, 3.94);
   b(trim, -4.43, 4.42, 42.91, 13.36, 0.16, 4.08);
-  for (const x of [-10.42, 1.56]) b(frame, x, 2.26, 44.4, 0.24, 3.83, 0.24);
+  for (const x of [-10.42, 1.56]) b(frame, x, 2.335, 44.4, 0.24, 3.55, 0.24);
   b(fluorescent, -4.35, 3.46, 41.9, 6.25, 0.18, 0.16);
 
   function fan(x, y, z, diameter) {
-    cyl(dark, x, y, z, diameter, 0.15, diameter);
-    ring(metal, x, y + 0.17, z, diameter, 0.94, diameter);
-    for (let i = 0; i < 7; i++) {
-      const a = i * ((Math.PI * 2) / 7) + 0.31;
-      b(
-        blade,
-        x + Math.sin(a) * diameter * 0.22,
-        y + 0.105,
-        z + Math.cos(a) * diameter * 0.22,
-        diameter * 0.14,
-        0.12,
-        diameter * 0.333,
-        a + 0.54
-      );
-    }
-    cyl(trim, x, y + 0.22, z, diameter * 0.16, 0.2, diameter * 0.16);
+    // The rotor, seven blades and concentric guard are one filtered face.
+    // Separate flat blades previously occupied the same plane around the hub.
+    cyl(fanSkin, x, y + 0.12, z, diameter, 0.28, diameter);
   }
   function pipeZ(mat, x, y, z, size, length) {
     cyl(mat, x, y, z, size, length, size, 0, Math.PI / 2);
   }
   function railZ(x, y, z, len, tint = rail) {
     for (let k = -len / 2; k <= len / 2; k += 3) b(frame, x, y + 0.6, z + k, 0.12, 1.2, 0.12);
-    for (const h of [0.55, 1.23]) b(tint, x, y + h, z, 0.13, 0.12, len);
+    for (const h of [0.55, 1.23]) b(tint, x - 0.15, y + h, z, 0.13, 0.12, len);
   }
   // The west-side yard is part of all three design studies.
-  b(base, -17.35, 0.48, -6, 10.15, 0.35, 69.35);
-  for (const z of [-37, -18, 1, 20]) {
-    for (let x = -20.8; x < -14; x += 1.02) b(stripe, x, 0.67, z, 0.37, 0.04, 2, 0.52);
-  }
-  for (let z = -39; z < 28; z += 3.7) b(frame, -22.15, 1.42, z, 0.22, 2.26, 0.22);
-  for (const h of [0.9, 1.36, 1.85, 2.35]) b(metal, -22.15, h, -6, 0.18, 0.13, 66.4);
+  b(yardSkin, -17.35, 0.48, -6, 10.15, 0.34, 69.35);
+  for (let z = -39; z < 28; z += 3.7) b(frame, -22.15, 1.6, z, 0.22, 1.9, 0.22);
+  for (const h of [0.9, 1.36, 1.85, 2.35]) b(metal, -22.31, h, -6, 0.15, 0.13, 66.4);
 
   if (design === 'reference') {
     // Banked evaporative cooling cells. The sloping fan stacks and blue casings
@@ -273,8 +349,7 @@ export function createFacility(design = 'reference') {
         b(dark, x, 10.72, z, 8.6, 0.63, 9.6);
         b(enamel, x, 12.5, z, 8.75, 3.2, 9.35);
         for (const s of [-1, 1]) {
-          b(dark, x + s * 4.42, 12.48, z, 0.14, 2.39, 8.48);
-          for (let n = 0; n < 5; n++) b(metal, x + s * 4.52, 11.5 + n * 0.47, z, 0.21, 0.15, 8.26);
+          b(grille, x + s * 4.47, 12.48, z, 0.27, 2.39, 8.48);
         }
         b(trim, x, 14.2, z, 9.05, 0.27, 9.65);
         taper(trim, x, 15.08, z, 7.8, 1.63, 7.8);
@@ -283,7 +358,7 @@ export function createFacility(design = 'reference') {
       }
     }
     b(gutter, 3.2, 10.81, -7, 3.7, 0.66, 60);
-    for (const x of [2.6, 3.9]) pipeZ(pipe, x, 11.39, -7, 0.74, 60);
+    for (const x of [2.6, 3.9]) pipeZ(pipe, x, 11.62, -7, 0.74, 59.2);
     for (let z = -35; z < 23; z += 7) b(trim, 3.24, 11.91, z, 2.44, 0.14, 0.23);
     for (const z of [-29, -10, 9]) {
       b(frame, -17.4, 1.43, z, 7.3, 1.4, 12.3);
@@ -317,30 +392,34 @@ export function createFacility(design = 'reference') {
       b(trim, -17.35, 5.91, z, 7.52, 0.31, 15.1);
       for (let k = 0; k < 3; k++) {
         const q = z - 4.8 + k * 4.8;
-        b(glass, -20.99, 3.66, q, 0.15, 3.29, 4.19);
-        for (let j = 0; j < 4; j++) b(metal, -21.12, 2.33 + j * 0.73, q, 0.2, 0.12, 4.02);
+        b(grille, -21.09, 3.66, q, 0.22, 3.29, 4.19);
         b(gutter, -17.35, 6.15, q, 4.8, 0.22, 2.37);
       }
     }
     railZ(-12.8, 0.72, -7.6, 61);
   } else {
+    const coil = printed('Folded dry cooler fin bank', colors.equipment, 512, 128, (pen) => {
+      pen.fillStyle = '#745b45';
+      for (let x = 4; x < 511; x += 15) pen.fillRect(x, 3, 3, 122);
+      pen.fillStyle = '#c49f70';
+      for (let x = 7; x < 511; x += 15) pen.fillRect(x, 3, 4, 122);
+    });
     // Open trusses carry two long rows of A-frame dry coolers. Paired fin banks
     // are visibly angled and bounded by painted steel uprights at each interval.
     for (const x of [-3.22, 11.05]) {
       for (const dx of [-5.4, 5.4]) {
         b(frame, x + dx, 12.3, -6, 0.33, 0.58, 64.6);
-        for (let z = -36; z <= 26; z += 7.3) b(frame, x + dx, 11.42, z, 0.28, 2.04, 0.31);
+        for (let z = -36; z <= 26; z += 7.3) b(frame, x + dx, 11.175, z, 0.28, 1.67, 0.31);
       }
       for (const z of [-28.6, -7.6, 13.4]) {
         b(dark, x, 12.58, z, 2.6, 0.35, 18.9);
         for (const sign of [-1, 1]) {
           // Outer edges slope out from the central lower manifold to a wide upper deck.
           const xx = x + sign * 3.22;
-          b(enamel, xx, 14.5, z, 0.44, 5.87, 19.3, 0, 0, -sign * 0.87);
-          for (let q = -9.0; q <= 9.1; q += 0.64)
-            b(pipe, xx + sign * 0.21, 14.52, z + q, 0.16, 5.68, 0.1, 0, 0, -sign * 0.87);
+          b(coil, xx, 14.5, z, 0.44, 5.87, 19.3, 0, 0, -sign * 0.87);
+          // Seat each channel on the actual face normal of its sloped casing.
           for (const q of [-9.45, 0, 9.45])
-            b(trim, xx + sign * 0.26, 14.52, z + q, 0.29, 5.94, 0.3, 0, 0, -sign * 0.87);
+            b(trim, xx + sign * 0.226, 14.232, z + q, 0.26, 6.04, 0.3, 0, 0, -sign * 0.87);
           b(trim, x + sign * 5.53, 16.64, z, 0.43, 0.47, 19.65);
         }
         b(frame, x, 16.51, z, 11.12, 0.57, 19.4);
@@ -360,28 +439,161 @@ export function createFacility(design = 'reference') {
     }
   }
   // A paved entry court, service vehicle and roof access walkway establish scale.
-  b(base, -4.2, 0.4, 42.8, 14.2, 0.17, 4.1);
-  for (let x = -10.8; x < 3.2; x += 1.62) b(apron, x, 0.493, 42.79, 0.045, 0.019, 3.97);
+  b(base, -4.2, 0.435, 43.72, 14.2, 0.25, 2.34);
+
   for (const x of [-9.4, -7.75, 1.1]) {
-    cyl(frame, x, 0.98, 44.25, 0.24, 1.0, 0.24);
-    cyl(fluorescent, x, 1.36, 44.25, 0.26, 0.12, 0.26);
+    cyl(frame, x, 0.92, 44.25, 0.24, 0.72, 0.24);
+    cyl(fluorescent, x, 1.34, 44.25, 0.26, 0.12, 0.26);
   }
   for (let z = 28.8; z < 44; z += 2.75) {
-    b(stripe, -17.74, 0.33, z, 7.28, 0.035, 0.1);
     b(base, -21.0, 0.54, z + 1.35, 0.49, 0.38, 1.73);
   }
   const x = -17.1,
     z = 37.86;
-  b(dark, x, 0.66, z, 4.65, 0.52, 1.8);
-  b(trim, x, 1.24, z, 4.76, 0.85, 1.86);
+  b(dark, x, 0.64, z, 4.65, 0.42, 1.8);
+  b(trim, x, 1.275, z, 4.76, 0.85, 1.86);
   b(glass, x + 0.33, 1.92, z, 2.74, 0.64, 1.71);
-  b(trim, x + 0.32, 2.29, z, 2.61, 0.14, 1.74);
+  b(trim, x + 0.32, 2.31, z, 2.61, 0.14, 1.74);
   for (const dx of [-1.47, 1.48])
     for (const dz of [-0.88, 0.88]) cyl(dark, x + dx, 0.75, z + dz, 0.69, 0.19, 0.69, 0, Math.PI / 2);
-  for (let x = 6.3; x < 18; x += 1.47) b(stripe, x, 0.34, 43.21, 0.58, 0.045, 3);
+
   group.userData.illustrative = true;
   group.userData.equipment = equipmentKeys[design];
   return finish();
+}
+
+// Both branches occupy one grade. At their junction, subtract the first
+// branch from the second before triangulating. The result has no stacked
+// sleepers, segment caps or overlapping top faces at the turnout.
+function raisedRailCorridors(paths) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 384;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+  const pen = seeded(7566);
+  ctx.fillStyle = '#83959b';
+  ctx.fillRect(0, 0, 384, 256);
+  for (let i = 0; i < 6000; i++) {
+    const value = Math.floor(113 + pen() * 39);
+    ctx.fillStyle = 'rgb(' + value + ',' + (value + 13) + ',' + (value + 16) + ')';
+    ctx.fillRect(pen() * 384, pen() * 256, 2, 1.8);
+  }
+  for (const center of [105, 279]) {
+    ctx.fillStyle = '#657980';
+    for (let i = 0; i < 8; i++) ctx.fillRect(center - 54, i * 32 + 5, 108, 10);
+    for (const rail of [center - 27, center + 27]) {
+      ctx.fillStyle = '#647880';
+      ctx.fillRect(rail - 4, 0, 7, 256);
+      ctx.fillStyle = '#bfcbca';
+      ctx.fillRect(rail - 2, 0, 3, 256);
+    }
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  const material = new THREE.MeshStandardMaterial({ map, roughness: 0.96 });
+  const positions = [],
+    uv = [],
+    occupied = [];
+  const half = 5.2;
+  const side = (a, b, p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+  function clip(poly, a, b, sign) {
+    const result = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i],
+        q = poly[(i + 1) % poly.length];
+      const d = sign * side(a, b, p),
+        e = sign * side(a, b, q);
+      if (d >= 0) result.push(p);
+      if (d > 0 !== e > 0) {
+        const t = d / (d - e);
+        result.push(p.map((v, k) => v + t * (q[k] - v)));
+      }
+    }
+    return result;
+  }
+  function subtract(poly, exclusion) {
+    const pieces = [];
+    for (let i = 0; i < exclusion.length && poly.length >= 3; i++) {
+      const a = exclusion[i],
+        b = exclusion[(i + 1) % exclusion.length];
+      const outside = clip(poly, a, b, -1);
+      if (outside.length >= 3) pieces.push(outside);
+      poly = clip(poly, a, b, 1);
+    }
+    return pieces;
+  }
+  function emit(polygon) {
+    for (let i = 1; i < polygon.length - 1; i++) {
+      let tri = [polygon[0], polygon[i], polygon[i + 1]];
+      if (Math.abs(side(...tri)) < 0.00001) continue;
+      if (side(...tri) > 0) tri.reverse();
+      for (const [x, z, u, v, y] of tri) {
+        positions.push(x, y, z);
+        uv.push(u, v);
+      }
+    }
+  }
+  const { minX, maxX, minZ, maxZ } = tableBounds;
+  const table = [
+    [minX, minZ],
+    [maxX, minZ],
+    [maxX, maxZ],
+    [minX, maxZ]
+  ];
+  const limits = (poly) => table.reduce((p, a, i) => clip(p, a, table[(i + 1) % 4], 1), poly);
+  for (const [index, path] of paths.entries()) {
+    const offsets = path.map(([x, z], i) => {
+      const a = path[Math.max(i - 1, 0)],
+        b = path[Math.min(i + 1, path.length - 1)];
+      const dx = b[0] - a[0],
+        dz = b[1] - a[1],
+        len = Math.hypot(dx, dz);
+      return [-dz / len, dx / len];
+    });
+    let chain = 0;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1],
+        b = path[i],
+        length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const corner = (j, d, height, t) => [
+        path[j][0] + offsets[j][0] * d,
+        path[j][1] + offsets[j][1] * d,
+        (d + half) / (2 * half),
+        t / 6.4,
+        height
+      ];
+      // Keep both sloping shoulders and the crown in one ribbon mesh.
+      const start = [-6.55, -half, half, 6.55].map((d, k) =>
+        corner(i - 1, d, k === 0 || k === 3 ? 0.14 : 0.76, chain)
+      );
+      const end = [-6.55, -half, half, 6.55].map((d, k) =>
+        corner(i, d, k === 0 || k === 3 ? 0.14 : 0.76, chain + length)
+      );
+      for (let k = 0; k < 3; k++) {
+        let pieces = [limits([start[k], end[k], end[k + 1], start[k + 1]])];
+        if (index)
+          for (const skip of occupied) pieces = pieces.flatMap((piece) => subtract(piece, skip));
+        pieces.forEach(emit);
+      }
+      if (!index) {
+        const border = [start[0], end[0], end[3], start[3]];
+        if (side(border[0], border[1], border[2]) < 0) border.reverse();
+        occupied.push(border);
+      }
+      chain += length;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.computeVertexNormals();
+  const rail = new THREE.Mesh(geometry, material);
+  rail.name = 'Continuous rail embankment';
+  rail.castShadow = true;
+  rail.receiveShadow = true;
+  return rail;
 }
 
 export function createDistrict({ print = false } = {}) {
@@ -421,7 +633,7 @@ export function createDistrict({ print = false } = {}) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  ctx.fillStyle = '#c2c1aa';
+  ctx.fillStyle = '#abbcc0';
   ctx.fillRect(minX, minZ, districtWidth, districtDepth);
   function disk(x, z, r, color) {
     ctx.fillStyle = color;
@@ -429,26 +641,26 @@ export function createDistrict({ print = false } = {}) {
     ctx.arc(x, z, r, 0, Math.PI * 2);
     ctx.fill();
   }
-  const pine = stock('#517969', 0.98),
-    moss = stock('#91a77b', 0.99),
-    sage = stock('#adba85', 0.99);
-  const leaf = stock('#729578', 0.97),
-    trunk = stock('#7e725b', 0.99);
-  const walls = ['#c9cbb4', '#dfc9aa', '#c4baa4', '#aabcb6'].map((c) => stock(c, 0.95));
-  const roofs = ['#798f8c', '#8b9c93', '#a2917e', '#6d8182'].map((c) => stock(c, 0.91));
-  const steel = stock('#8e9c9c', 0.7, 0.14),
-    concrete = stock('#a1aaa4', 0.95),
-    slab = stock('#788680', 0.93);
-  const ink = stock('#36494c', 0.83),
-    cream = stock('#b7bbae', 0.9);
+  const pine = stock('#52777c', 0.98),
+    moss = stock('#84a6a0', 0.99),
+    sage = stock('#98b2a8', 0.99);
+  const leaf = stock('#729694', 0.97),
+    trunk = stock('#788a8a', 0.99);
+  const walls = ['#c4d0d1', '#ccd4d1', '#b9c7ca', '#afc4c8'].map((c) => stock(c, 0.95));
+  const roofs = ['#81969e', '#91a3ac', '#8b9d9d', '#778e99'].map((c) => stock(c, 0.91));
+  const steel = stock('#91a5af', 0.7, 0.14),
+    concrete = stock('#a9babe', 0.95),
+    slab = stock('#80959d', 0.93);
+  const ink = stock('#536a74', 0.83),
+    cream = stock('#bfcbcf', 0.9);
   const corner = (minX + maxX) / 2,
     mid = (minZ + maxZ) / 2;
   const plinth = new THREE.Group();
   if (!print) {
     const edge = modelParts(plinth);
-    edge.box(edge.stock('#718480'), corner, -23, mid, districtWidth - 8, 8, districtDepth - 8);
-    edge.box(edge.stock('#c2bba0'), corner, -18, mid, districtWidth - 2, 2, districtDepth - 2);
-    edge.box(edge.stock('#a5a28d'), corner, -8.55, mid, districtWidth, 16.9, districtDepth);
+    edge.box(edge.stock('#748791'), corner, -23, mid, districtWidth - 8, 8, districtDepth - 8);
+    edge.box(edge.stock('#9db1b6'), corner, -18, mid, districtWidth - 2, 2, districtDepth - 2);
+    edge.box(edge.stock('#9fadb0'), corner, -8.55, mid, districtWidth, 16.9, districtDepth);
     edge.finish();
     group.add(plinth);
   }
@@ -503,11 +715,11 @@ export function createDistrict({ print = false } = {}) {
   }
   const blockAngle = -Math.atan2(sin, cos);
   const districtBlock = [block(-26, -9), block(886, -9), block(886, 1288), block(-24, 1288)];
-  fill(districtBlock, '#b7bd9e');
+  fill(districtBlock, '#a9bdbc');
   const parkPlane = constraintShapes.park;
-  fill(parkPlane, '#aac293');
-  line(parcel, '#a8a17f', 5);
-  fill(parcel, '#d4cfad');
+  fill(parkPlane, '#9db9a9');
+  line(parcel, '#859d9e', 5);
+  fill(parcel, '#bac8c2');
   // Topographic paper with a restrained stipple, slight textural variation and
   // a thin edge around the undeveloped parcel. Neutral tones leave room for
   // the analytical overlays. The site path is traced from the city exhibit.
@@ -518,7 +730,7 @@ export function createDistrict({ print = false } = {}) {
   ctx.save();
   path(parcel, true);
   ctx.clip();
-  ctx.fillStyle = '#d4cfad';
+  ctx.fillStyle = '#bac8c2';
   ctx.fillRect(-490, -480, 980, 960);
   const herbs = seeded(14521);
   for (let i = 0; i < 5800; i++) {
@@ -531,7 +743,7 @@ export function createDistrict({ print = false } = {}) {
           [x, z],
           [x + 0.55 + r * 0.6, z - 0.25]
         ],
-        'rgba(116,123,86,.24)',
+        'rgba(99,128,124,.2)',
         0.31
       );
   }
@@ -545,16 +757,16 @@ export function createDistrict({ print = false } = {}) {
     [290, 437],
     [284, 445]
   ].map(feature);
-  line(swale, '#c1b998', 5);
-  line(swale, '#ddd1b0', 2.2);
+  line(swale, '#aab9b5', 5);
+  line(swale, '#cad5cd', 2.2);
   ctx.restore();
 
   // Existing river corridor vegetation is stylized; keep a clean water channel.
-  line(riverLine, '#9cba9a', 59);
-  line(riverLine, '#b1c6a4', 35);
-  line(riverLine, '#d7d2ab', 22);
-  line(riverLine, '#6faba8', 16);
-  line(shiftPath(riverLine, 5), '#a7d4c7', 1.2);
+  line(riverLine, '#8ca9a3', 59);
+  line(riverLine, '#a4b9b0', 35);
+  line(riverLine, '#bdd0ca', 22);
+  line(riverLine, '#79a9b3', 16);
+  line(shiftPath(riverLine, 5), '#a7cad0', 1.2);
   for (let i = 0; i < 9; i++) {
     const v = i * 74;
     corridor([block(-4, v), block(1100, v)], 6.5);
@@ -580,7 +792,7 @@ export function createDistrict({ print = false } = {}) {
     feature([71, 241]),
     feature([-100, 344])
   ];
-  fill(westMask, '#b2b89d');
+  fill(westMask, '#adbdba');
   for (let u = 0; u < 1180; u += 165) {
     const pts = [west(u, -900), west(u, 470)]; // clip against the neighborhood polygon when painted
     roads.push({ points: pts, width: 7, mask: westMask });
@@ -602,7 +814,7 @@ export function createDistrict({ print = false } = {}) {
       h = 3.7 + random() * 1.8;
     const mat = walls[Math.floor(random() * walls.length)],
       top = roofs[Math.floor(random() * roofs.length)];
-    lot(x, z, w + 2, d + 2, angle, '#aeb29a');
+    lot(x, z, w + 2, d + 2, angle, '#9cafa9');
     b(mat, x, h / 2 + 0.1, z, w, h, d, angle);
     gable(top, x, h + 0.05, z, w + 0.7, 1.9 + random() * 0.9, d + 0.7, angle);
     // Street-facing front doors, inset sash windows and porch in the detailed
@@ -616,16 +828,35 @@ export function createDistrict({ print = false } = {}) {
       detail(-w * 0.18, d * 0.5 + 0.05, 1.15, 1.08, 2.2, 0.12, ink);
       for (const u of [-w * 0.36, w * 0.09, w * 0.34])
         detail(u, d * 0.5 + 0.08, 2.45, 1.1, 1.15, 0.13, roofs[3]);
-      detail(-w * 0.18, d * 0.5 + 0.65, 0.22, 2.2, 0.33, 1.4, concrete);
+      detail(-w * 0.18, d * 0.5 + 0.82, 0.22, 2.2, 0.33, 1.4, concrete);
     }
     if (random() < 0.23) {
       const ds = 3.5 + random() * 2;
-      b(mat, x + w * 0.27, 2, z + d * 0.46, ds, 3.7, ds, angle);
+      const offset = -(d * 0.5 + ds * 0.28);
+      b(
+        mat,
+        x + Math.sin(angle) * offset,
+        1.48,
+        z + Math.cos(angle) * offset,
+        ds,
+        2.7,
+        ds * 0.52,
+        angle
+      );
     }
     if (random() < 0.27) b(ink, x + 1.1, h + 1.4, z + 2, 1.05, 2.4, 1.2, angle);
   }
+  const trunkCells = new Map();
   function canopy(x, z, r, style) {
     if (!inside(x, z, r)) return;
+    const ix = Math.floor(x / 2),
+      iz = Math.floor(z / 2),
+      key = ix + ',' + iz;
+    for (let i = ix - 1; i <= ix + 1; i++)
+      for (let j = iz - 1; j <= iz + 1; j++)
+        if ((trunkCells.get(i + ',' + j) || []).some(([a, b]) => Math.hypot(x - a, z - b) < 1.4)) return;
+    if (!trunkCells.has(key)) trunkCells.set(key, []);
+    trunkCells.get(key).push([x, z]);
     const m = style || [pine, leaf, moss, sage][Math.floor(random() * 4)];
     const h = 2.15 + r * 0.55;
     const form = random();
@@ -657,7 +888,7 @@ export function createDistrict({ print = false } = {}) {
             if (random() < 0.72) canopy(tx, tz, 2.5 + random() * 2.2);
             const a = convert(u - 5, y - sign * 4),
               e = convert(u - 5, v);
-            line([a, e], '#cecfb7', 2.2);
+            line([a, e], '#c7d3d1', 2.2);
           }
       }
   }
@@ -683,8 +914,8 @@ export function createDistrict({ print = false } = {}) {
     function local(a, q) {
       return [x + a * c + q * s, z - a * s + q * c];
     }
-    lot(x, z, w + 29, d + 30, angle, '#b3b1a0');
-    b(slab, x, 0.35, z, w + 2, 0.7, d + 2, angle);
+    lot(x, z, w + 29, d + 30, angle, '#a3b1b5');
+    b(slab, x, 0.41, z, w + 2, 0.58, d + 2, angle);
     b(tint, x, h / 2 + 0.71, z, w, h, d, angle);
     b(ink, x, h + 0.76, z, w + 0.4, 0.37, d + 0.4, angle);
     b(roofs[1], x, h + 1.14, z, w + 0.8, 0.55, d + 0.8, angle);
@@ -699,30 +930,18 @@ export function createDistrict({ print = false } = {}) {
     }
     for (let i = -w * 0.4; i < w * 0.44; i += 12) {
       const [a, q] = local(i, d / 2 + 0.1);
-      b(ink, a, h * 0.42, q, 3.6, h * 0.64, 0.21, angle);
+      b(ink, a, h * 0.42, q, 3.6, h * 0.64, 0.19, angle);
     }
   }
-  industrial(184, 505, 58, 59, 0.51, 7);
-  industrial(148, 535, 42, 102, 0.5, 8);
-  industrial(76, 522, 105, 143, 0.46, 8);
-  industrial(59, 439, 33, 48, 0.48, 6);
-  industrial(636, 179, 176, 56, 0.31, 9);
-  industrial(673, 266, 42, 105, 0.45, 9);
-  industrial(530, 106, 85, 82, 0.38, 7);
-  industrial(581, 77, 44, 53, 0.32, 8);
-  industrial(17, 608, 132, 126, 0.43, 9);
-  industrial(519, -11, 119, 70, 0.34, 8);
-  industrial(804, 49, 46, 61, 0.35, 7);
+  for (const shape of industrialStructures) industrial(...shape);
   // Detached masses on the school and senior-housing sites are illustrative.
-  industrial(455, 86, 49, 65, -0.38, 8.8, walls[1]);
-  industrial(472, 92, 45, 38, -0.38, 7.5, walls[1]);
-  industrial(653, 343, 43, 25, 0.36, 12.5, walls[1]);
+  for (const shape of [...schoolStructures, ...seniorStructures]) industrial(...shape, walls[1]);
   // Park ball diamond and field use authored geometries rather than cached imagery.
   const [parkX, parkZ] = feature([359, 431]);
   ctx.save();
   ctx.translate(parkX, parkZ);
   ctx.rotate(0.28);
-  ctx.fillStyle = '#c5a072';
+  ctx.fillStyle = '#b7a896';
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.arc(0, 0, 17, -Math.PI * 0.8, -Math.PI * 0.3);
@@ -736,7 +955,7 @@ export function createDistrict({ print = false } = {}) {
       [8, -9],
       [0, 0]
     ],
-    '#c5c1a0',
+    '#cbd1be',
     0.65
   );
   ctx.restore();
@@ -747,7 +966,7 @@ export function createDistrict({ print = false } = {}) {
     feature([386, 391]),
     feature([402, 373])
   ];
-  line(parkLoop, '#dfd3b0', 2.2);
+  line(parkLoop, '#c6d0bf', 2.2);
   // A grass playing surface and small-scale fixtures distinguish the park
   // from a colored land-use polygon in the physical workshop model.
   ctx.save();
@@ -757,7 +976,7 @@ export function createDistrict({ print = false } = {}) {
   for (let i = 0; i < 2100; i++) {
     const [x, z] = feature([327 + parkRandom() * 120, 304 + parkRandom() * 158]);
     const v = parkRandom();
-    disk(x, z, 0.4 + v * 0.8, v > 0.5 ? 'rgba(191,190,145,.21)' : 'rgba(49,83,68,.16)');
+    disk(x, z, 0.4 + v * 0.8, v > 0.5 ? 'rgba(173,194,180,.16)' : 'rgba(78,108,106,.14)');
   }
   ctx.restore();
   const trail = parkLoop;
@@ -767,7 +986,7 @@ export function createDistrict({ print = false } = {}) {
     b(concrete, x + 0.1, 0.28, z, 0.21, 0.55, 0.3);
     b(concrete, x + 2, 0.28, z, 0.21, 0.55, 0.3);
   }
-  const fence = stock('#839089', 0.84, 0.14);
+  const fence = stock('#8c9e9e', 0.84, 0.14);
   for (let i = 0; i < 13; i++) {
     const ang = -Math.PI * 0.8 + i * ((Math.PI * 0.5) / 12);
     const x = parkX + Math.cos(ang) * 26,
@@ -832,7 +1051,7 @@ export function createDistrict({ print = false } = {}) {
     ]
   ];
   for (const poly of forestPolys) {
-    fill(poly, '#a2b48d');
+    fill(poly, '#96ada3');
     const xs = poly.map((q) => q[0]),
       zs = poly.map((q) => q[1]);
     for (let x = Math.min(...xs); x < Math.max(...xs); x += 9) {
@@ -881,7 +1100,7 @@ export function createDistrict({ print = false } = {}) {
     tree(m, x, r * 0.23, z, r * 1.17, r * 0.6, r * 0.85, scrub() * 6.28);
     if (patch > 0.72 && scrub() > 0.55)
       tree(m, x + r * 0.61, r * 0.18, z + r * 0.12, r * 0.8, r * 0.45, r * 0.61, scrub() * 4);
-    disk(x, z + r * 0.18, r, 'rgba(46,72,49,.24)');
+    disk(x, z + r * 0.18, r, 'rgba(67,90,92,.2)');
   }
   // Two-lane and local street centerlines, parking and multi-track rail ballast.
   for (const r of roads) {
@@ -890,61 +1109,37 @@ export function createDistrict({ print = false } = {}) {
       path(r.mask, true);
       ctx.clip();
     }
-    line(r.points, '#d7d1b9', r.width + 4);
-    line(r.points, '#a8ada2', r.width);
-    if (r.arterial) line(r.points, '#c0b797', 0.36, [2.1, 3.5]);
+    line(r.points, '#d1dad6', r.width + 4);
+    line(r.points, '#98aab0', r.width);
+    if (r.arterial) line(r.points, '#c8c4a9', 0.36, [2.1, 3.5]);
     ctx.restore();
   }
   function rail(points, tracks) {
-    line(points, '#a49f88', tracks * 4.6 + 5);
+    line(points, '#87979c', tracks * 4.6 + 5);
     for (let i = 0; i < tracks; i++) {
       const ax = shiftPath(points, (i - (tracks - 1) / 2) * 4.7);
-      line(ax, '#7c8076', 3.05, [0.52, 1.65]);
-      for (const d of [-0.74, 0.74]) line(shiftPath(ax, d), '#a3ada5', 0.3);
+      line(ax, '#647a80', 3.05, [0.52, 1.65]);
+      for (const d of [-0.74, 0.74]) line(shiftPath(ax, d), '#a8b9bc', 0.3);
     }
   }
-  rail(railwayNorth, 2);
-  rail(railwayEast, 2);
-  // Actual rail centerlines have a raised dark ballast bed, ties and paired
-  // rails in the local site model. The long drawing is clipped by the renderer.
-  const ballast = stock('#b0a78e', 0.96),
-    tie = stock('#837d6b', 0.94),
-    iron = stock('#b5b8ad', 0.68, 0.22);
-  for (const track of [railwayNorth, railwayEast]) {
-    for (let i = 1; i < track.length; i++) {
-      const a = track[i - 1],
-        q = track[i],
-        dx = q[0] - a[0],
-        dz = q[1] - a[1],
-        len = Math.hypot(dx, dz),
-        yaw = -Math.atan2(dz, dx);
-      for (let l = 1; l < len; l += 2.35) {
-        const x = a[0] + (dx * l) / len,
-          z = a[1] + (dz * l) / len;
-        if (!inside(x, z, 7)) continue;
-        b(ballast, x, 0.17, z, 2.32, 0.3, 9.7, yaw);
-        for (const off of [-2.35, 2.35]) {
-          const mx = x - (dz * off) / len,
-            mz = z + (dx * off) / len;
-          b(tie, mx, 0.36, mz, 0.54, 0.16, 3, yaw);
-          for (const sd of [-0.74, 0.74])
-            b(iron, mx - (dz / len) * sd, 0.52, mz + (dx / len) * sd, 2.31, 0.14, 0.15, yaw);
-        }
-      }
-    }
+  if (print) {
+    rail(railwayNorth, 2);
+    rail(railwayEast, 2);
+  } else {
+    group.add(raisedRailCorridors([railwayNorth, railwayEast]));
   }
-  line(freeway, '#b4b796', 58);
+  line(freeway, '#a4b8b1', 58);
   for (const side of [-1, 1]) {
     const midline = shiftPath(freeway, side * 15);
-    line(midline, '#c0c1aa', 19.4);
-    line(midline, '#929c95', 17.1);
-    for (const d of [-3.5, 3.5]) line(shiftPath(midline, d), '#c5c8b9', 0.3, [3.5, 8]);
-    line(shiftPath(midline, side * 7.4), '#c4c4b4', 0.32);
-    line(shiftPath(midline, -side * 7.6), '#bdb28c', 0.35);
+    line(midline, '#bcc9c7', 19.4);
+    line(midline, '#869aa3', 17.1);
+    for (const d of [-3.5, 3.5]) line(shiftPath(midline, d), '#cbd5d3', 0.3, [3.5, 8]);
+    line(shiftPath(midline, side * 7.4), '#cbd5d3', 0.32);
+    line(shiftPath(midline, -side * 7.6), '#c7c3a5', 0.35);
   }
   // Printed curbs and occasional light standards mark Enterprise Drive.
   // Keep long curbs out of the turning head at the north end of the frontage.
-  const curbStock = stock('#cfccb4', 0.96);
+  const curbStock = stock('#ccdad8', 0.96);
   for (let i = 1; i < enterprise.length; i++) {
     const a = enterprise[i - 1],
       q = enterprise[i],
@@ -963,18 +1158,18 @@ export function createDistrict({ print = false } = {}) {
       }
     }
     const edge = shiftPath([a, q], 6.3);
-    line(edge, '#bab797', 1.05);
+    line(edge, '#b4c5be', 1.05);
   }
   for (const pt of [
     [205, 411],
     [223, 385],
-    [172, 474],
+    [164, 461],
     [148, 519]
   ]) {
     const [x, z] = feature(pt);
-    cyl(ink, x, 3.58, z, 0.22, 7.16, 0.22);
+    cyl(ink, x, 3.68, z, 0.22, 7.0, 0.22);
     b(ink, x + 0.67, 7.06, z, 1.35, 0.15, 0.18);
-    b(walls[2], x + 1.33, 7.0, z, 0.8, 0.19, 0.36);
+    b(walls[2], x + 1.33, 7.24, z, 0.8, 0.2, 0.36);
   }
   // Short vehicle marks make the roadway scale visible from the district camera.
   for (let j = 0; j < freeway.length - 1; j++) {
@@ -1000,7 +1195,7 @@ export function createDistrict({ print = false } = {}) {
         [x, maxZ - 4],
         [x, maxZ - (Math.abs(Math.round(x)) % 200 === 10 ? 11 : 7)]
       ],
-      '#968f7e',
+      '#8a9d9f',
       0.75
     );
   }

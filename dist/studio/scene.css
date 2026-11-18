@@ -3,7 +3,7 @@
   inset: 0;
   isolation: isolate;
   overflow: hidden;
-  background: #b0d4d3;
+  background: #dce9e6;
 }
 .ds-studio-canvas,
 .ds-studio-labels {
@@ -46,12 +46,12 @@
   align-items: center;
   gap: 5px;
   font:
-    600 11px/1.2 Arial,
+    600 11px/1.2 Helvetica,
     sans-serif;
   color: #243d3a;
-  background: #f3f2dfeb;
+  background: #f8faf8eb;
   padding: 4px 7px;
-  border: 1px solid #9bada3;
+  border: 1px solid #b7cbc0;
   border-radius: 2px;
   text-shadow: none;
   box-shadow: 0 1px 2px #384d4829;
@@ -75,19 +75,19 @@
   padding: 2px 4px;
   box-shadow: none;
   font-weight: 600;
-  background: #f2f1dcde;
+  background: #f8faf8de;
   border: 0;
 }
 .ds-scene-tag.street {
   color: #4c5a50;
-  background: #f2f1dcde;
+  background: #f8faf8de;
 }
 .ds-scene-tag.facility {
   font-weight: 700;
   font-size: 12px;
   letter-spacing: 0.12px;
   border-color: #365856;
-  color: #fff7e7;
+  color: #f8faf8;
   background: #254545f1;
   padding: 5px 8px;
   box-shadow: 0 3px 9px #00131235;
@@ -114,11 +114,11 @@
   pointer-events: auto;
   cursor: pointer;
   border-color: #c4a46b;
-  color: #ffe0a4;
-  background: #322c20;
+  color: #886326;
+  background: #f5ead6;
 }
 .ds-scene-tag.note.selected {
-  outline: 1px solid #ffe0a4;
+  outline: 1px solid #886326;
 }
 @media (max-width: 640px) {
   .ds-scene-tag {
@@ -142,7 +142,7 @@
 .ds-scene-tag.ds-listening {
   border-color: #9b7095;
   color: #644664;
-  background: #fbf1e9f2;
+  background: #f5eff7f2;
 }
 .ds-scene-tag.ds-listening::before {
   content: '';
@@ -173,14 +173,14 @@
   overflow: hidden;
 }
 .ds-machine-leaders polyline {
-  stroke: #fcf7e6;
+  stroke: #f8faf8;
   fill: none;
   stroke-width: 1.5;
   filter: drop-shadow(0 1px 0 #4a5b55);
 }
 .ds-machine-leaders circle {
   stroke: #294748;
-  fill: #f3efdb;
+  fill: #f8faf8;
   stroke-width: 1.4;
 }
 .ds-machine-tag {
@@ -190,10 +190,10 @@
   white-space: nowrap;
   padding: 5px 7px;
   color: #244046;
-  background: #f7f4e7f5;
+  background: #f8faf8f5;
   border: 1px solid #47625b;
   font:
-    600 10px/1.12 Arial,
+    600 10px/1.12 Helvetica,
     sans-serif;
   box-shadow: 1px 2px 0 #29434026;
 }

@@ -38,7 +38,7 @@ test('parcel clipping counts the real oriented footprint, including partial over
 });
 
 test('river measurement detects a segment crossing even when its vertices lie outside the footprint', () => {
-  const [a, b] = river;
+  const [a, b] = river.slice(8, 10);
   const p = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   for (const angle of [0, 31, 90]) assert.equal(analyzePlacement({ point: p, angle }).riverSetbackM, 0);
   const r = analyzePlacement({ ...initial, angle: 90 });
@@ -82,4 +82,13 @@ test('resource use follows the facility design and does not change during placem
     assert.equal(none[k], null);
   for (const k of ['energyGWh', 'waterMGal', 'peakMW']) assert.equal(none[k], 0);
   assert.equal(none.delta.energyGWh, -182.2);
+});
+
+
+test('river clearance does not extrapolate a local reach to off-table placements', () => {
+  const result = analyzePlacement({ point: [42.21, -83.27], angle: 30 });
+  assert.equal(result.riverOutOfCoverage, true);
+  assert.equal(result.riverSetbackM, null);
+  assert.equal(result.riverWitness, null);
+  assert.equal(result.delta.riverSetbackM, null);
 });
