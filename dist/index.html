@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>DataScope · Allen Park community map</title>
+    <meta
+      name="description"
+      content="Explore and compare data center placements with your community in Allen Park, Michigan."
+    />
+    <link rel="icon" href="assets/mark.svg" />
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="map.css" />
+    <script defer src="vendor/leaflet.js"></script>
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="DataScope home"
+        ><img src="assets/mark.svg" alt="" />DataScope<span>.</span></a
+      >
+      <span class="product">Community workspace</span>
+      <div class="partners">
+        <img src="assets/city-science.svg" alt="MIT City Science" /><img
+          src="assets/mit-media-lab.svg"
+          alt="MIT Media Lab"
+        />
+      </div>
+      <div class="top-actions">
+        <button class="quiet" id="files"><i data-icon="share"></i><span>Workshop files</span></button
+        ><button class="icon-btn" id="full" aria-label="Enter full screen" title="Full screen">
+          <i data-icon="expand"></i></button
+        ><button class="primary" id="add-note"><i data-icon="pinplus"></i>Add note</button>
+      </div>
+    </header>
+    <main class="workspace">
+      <aside id="sidebar" class="sidebar" aria-label="Workshop tools" tabindex="-1">
+        <div class="site-head">
+          <div class="kicker"><i data-icon="loc"></i>Michigan, United States</div>
+          <div class="title-line">
+            <h1>Allen Park</h1>
+            <button class="icon-btn drawer-close" id="close-drawer" aria-label="Close workshop tools">
+              <i data-icon="close"></i>
+            </button>
+          </div>
+          <p>Data center siting workshop</p>
+        </div>
+        <nav class="tabs" aria-label="Workshop views">
+          <button data-tab="siting" aria-current="page"><i data-icon="footprint"></i>Siting</button
+          ><button data-tab="notes"><i data-icon="note"></i>Notes <span id="count">0</span></button
+          ><button data-tab="evidence"><i data-icon="book"></i>Evidence</button>
+        </nav>
+        <div id="panel" class="panel"></div>
+        <div class="sidefoot">
+          <span id="local-status"><b></b> Saved on this device</span
+          ><button id="compare"><i data-icon="compare"></i>Compare</button>
+        </div>
+      </aside>
+      <button id="scrim" hidden aria-label="Close workshop tools"></button>
+      <section class="map-area" aria-label="Interactive siting map">
+        <div class="map-wrap">
+          <div id="map" aria-label="Map of Allen Park and Melvindale"></div>
+          <div class="maptools">
+            <button
+              id="open-drawer"
+              class="map-btn mobile-tools"
+              aria-controls="sidebar"
+              aria-expanded="false"
+            >
+              <i data-icon="controls"></i>Workshop
+            </button>
+            <div class="layer-wrap">
+              <button id="layers" class="map-btn" aria-expanded="false" aria-controls="layers-menu">
+                <i data-icon="layers"></i><span>Layers</span>
+              </button>
+              <div hidden id="layers-menu" class="popover"></div>
+            </div>
+            <div class="base-wrap">
+              <label class="map-btn" for="base"
+                ><i data-icon="terrain"></i
+                ><select id="base">
+                  <option value="night">Night aerial</option>
+                  <option value="satellite">Satellite</option></select
+                ><i data-icon="chevron"></i
+              ></label>
+            </div>
+          </div>
+          <div class="nav-map">
+            <button class="compass" id="home" title="Fit study area" aria-label="Fit study area">
+              <b>N</b><i data-icon="north"></i>
+            </button>
+            <div>
+              <button id="zin" aria-label="Zoom in">+</button
+              ><button id="zout" aria-label="Zoom out">−</button>
+            </div>
+          </div>
+          <div id="parcel-context">
+            <i></i><span>Proposed parcel</span><small id="parcel-state"></small>
+          </div>
+          <div id="modebar" hidden></div>
+        </div>
+        <section class="readouts" aria-label="Distances to mapped community places">
+          <div class="readhead">
+            <h2><i data-icon="measure"></i>Nearby places</h2>
+            <span id="origin">From footprint center · straight line</span>
+          </div>
+          <div id="metrics" class="metrics"></div>
+        </section>
+      </section>
+    </main>
+    <dialog id="dialog" aria-labelledby="dialog-title">
+      <div class="dialog-head">
+        <h2 id="dialog-title"></h2>
+        <button id="dialog-close" class="icon-btn" aria-label="Close dialog">
+          <i data-icon="close"></i>
+        </button>
+      </div>
+      <div id="dialog-body"></div>
+    </dialog>
+    <div role="status" id="toast" hidden></div>
+  </body>
+</html>

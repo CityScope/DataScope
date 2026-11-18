@@ -1,0 +1,9 @@
+{
+  "name": "datascope-community",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 4174 --bind 127.0.0.1 --directory dist",
+    "test": "node --test qa/*.test.mjs"
+  }
+}

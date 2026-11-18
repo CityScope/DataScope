@@ -1,0 +1,293 @@
+.scope-map.leaflet-container {
+  isolation: isolate;
+  background-color: #192a2e;
+  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    linear-gradient(#3f54591f 1px, transparent 1px),
+    linear-gradient(90deg, #3f54591f 1px, transparent 1px);
+  background-size: 52px 52px;
+  color: #e4eeeb;
+}
+.scope-map .leaflet-tile {
+  /* Overlap resampled tile edges at fractional zooms to avoid hairline seams. */
+  width: 256.5px !important;
+  height: 256.5px !important;
+}
+.scope-map .leaflet-tile-pane {
+  transition: filter 0.35s ease;
+}
+.scope-map[data-base='night'] .leaflet-tile-pane {
+  filter: saturate(0.43) brightness(0.76) contrast(1.06);
+}
+.scope-map[data-base='satellite'] .leaflet-tile-pane {
+  filter: none;
+}
+.scope-map[data-mode='place'],
+.scope-map[data-mode='note'] {
+  cursor: crosshair;
+}
+.scope-map .scope-map-label,
+.scope-map .scope-place-marker,
+.scope-map .scope-handle,
+.scope-map .scope-note-marker {
+  background: transparent;
+  border: 0;
+}
+.scope-map .scope-place-marker,
+.scope-map .scope-note-marker,
+.scope-map .scope-handle {
+  pointer-events: auto;
+}
+.scope-map .scope-place-content {
+  --place: #c3d9e0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+}
+.scope-map .scope-place-marker.label-left .scope-place-content {
+  flex-direction: row-reverse;
+  transform: translateX(calc(-100% + 21px));
+  text-align: right;
+}
+.scope-map .scope-place-content.park {
+  --place: #8eddb3;
+}
+.scope-map .scope-place-content.school {
+  --place: #add9f3;
+}
+.scope-map .scope-place-content.housing {
+  --place: #ebc79a;
+}
+.scope-map .scope-place-badge,
+.scope-map .scope-note-badge {
+  width: 21px;
+  height: 21px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid currentColor;
+  color: var(--place);
+  background: #102126e8;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px #030b0d99;
+}
+.scope-map .scope-place-badge svg,
+.scope-map .scope-note-badge svg,
+.scope-map .scope-drag-handle svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.scope-map .scope-place-title,
+.scope-map .scope-text-label {
+  display: inline-block;
+  width: max-content;
+  line-height: 1.15;
+  font-size: 12px;
+  font-weight: 600;
+  color: #edf5f0;
+  text-shadow:
+    0 1px 2px #0a1215,
+    0 0 3px #11191a,
+    0 0 6px #11191a,
+    1px 0 #14242a,
+    -1px 0 #14242a;
+}
+.scope-map .scope-place-title {
+  padding: 3px 5px;
+  border-radius: 3px;
+  max-width: 138px;
+  white-space: normal;
+  background: #152227a6;
+}
+.scope-map .scope-place-content.park .scope-place-title {
+  color: #b5edc8;
+}
+.scope-map .scope-text-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #e2e6dd;
+}
+.scope-map .road-label {
+  opacity: 0.89;
+}
+.scope-map .enterprise-label .scope-text-label {
+  transform: rotate(-60deg);
+  transform-origin: left;
+}
+.scope-map .neighborhood-label .scope-text-label {
+  transform: rotate(32deg);
+  transform-origin: left;
+}
+.scope-map .interstate-label .scope-text-label {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-top: 2px solid #bd8b77;
+  background: #263c4c;
+  border-radius: 2px 2px 5px 5px;
+}
+.scope-map .water-label .scope-text-label {
+  color: #a3d2df;
+  font-style: italic;
+  padding-left: 6px;
+  transform: translateY(-16px);
+}
+.scope-map .scope-note-badge {
+  width: 27px;
+  height: 27px;
+  color: #ffcc83;
+  border-radius: 9px 9px 9px 1px;
+  background: #352b1f;
+}
+.scope-map .scope-note-marker.selected .scope-note-badge {
+  outline: 3px solid #ffc47566;
+  background: #5d421d;
+}
+.scope-map .scope-drag-handle {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 40px;
+  cursor: grab;
+}
+.scope-map .scope-drag-handle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--roof-width, 40px);
+  height: var(--roof-length, 40px);
+  transform: translate(-50%, -50%) rotate(var(--roof-angle, 0deg));
+  cursor: inherit;
+}
+.scope-map[data-mode='note'] .scope-drag-handle {
+  cursor: crosshair;
+}
+.scope-map .scope-drag-handle svg {
+  display: block;
+  position: absolute;
+  left: 9px;
+  top: 9px;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 1px solid #bbf9e9;
+  padding: 3px;
+  border-radius: 5px;
+  color: #e1fff6;
+  background: #164842e8;
+  box-shadow: 0 2px 6px #071c1eb0;
+}
+.scope-map .scope-footprint-label {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--label-gap, 10px));
+  transform: translateX(-50%);
+  white-space: nowrap;
+  color: #dcfff6;
+  border: 1px solid #6bc6b5;
+  border-radius: 4px;
+  padding: 4px 8px;
+  line-height: 1.1;
+  font-size: 12px;
+  font-weight: 700;
+  background: #143936ed;
+  box-shadow: 0 2px 7px #091c1f7a;
+}
+.scope-map .scope-footprint-label::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  height: 13px;
+  border-left: 1px solid #95e1cf;
+}
+.scope-map .moving-footprint,
+.scope-map.moving-footprint,
+.scope-map.moving-footprint .scope-drag-handle {
+  cursor: grabbing !important;
+}
+.scope-map .wide-area .scope-text-label,
+.scope-map.wide-area .road-label,
+.scope-map.wide-area .scope-place-title {
+  display: none;
+}
+.scope-map .leaflet-control-attribution {
+  margin: 0;
+  padding: 2px 5px;
+  line-height: 1.2;
+  font-size: 10px;
+  background: #142024c9;
+  color: #ccdad9;
+}
+.scope-map .leaflet-control-attribution a {
+  color: #cedddb;
+  text-decoration: underline;
+}
+.scope-map .leaflet-control-scale {
+  margin: 0 0 7px 10px;
+}
+.scope-map .leaflet-control-scale-line {
+  border-color: #d0dbd8;
+  border-width: 0 1px 2px;
+  color: #e5edeb;
+  background: #1420248c;
+  font-size: 10px;
+  line-height: 1.1;
+  text-shadow: 0 1px #162327;
+}
+.scope-map .scope-leaflet-popup .leaflet-popup-content-wrapper,
+.scope-map .scope-leaflet-popup .leaflet-popup-tip {
+  background: #1e3036;
+  color: #edf4ef;
+}
+.scope-map .scope-popup {
+  display: grid;
+  gap: 5px;
+  font-size: 14px;
+}
+.scope-map .scope-popup p {
+  margin: 0;
+  color: #aebfc0;
+  font-size: 12px;
+}
+.scope-map .scope-popup a {
+  color: #a4d8e6;
+}
+.scope-map .leaflet-popup-close-button {
+  color: #d9e5df !important;
+}
+.scope-map :focus-visible {
+  outline: 2px solid #c3eee4;
+  outline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .scope-map .leaflet-control-attribution {
+    max-width: calc(100vw - 8px);
+    text-align: right;
+    white-space: normal;
+  }
+  .scope-map .leaflet-control-scale {
+    margin-bottom: 24px;
+  }
+  .scope-map .scope-place-title {
+    max-width: 96px;
+    font-size: 11px;
+  }
+  .scope-map .scope-footprint-label {
+    font-size: 11px;
+  }
+  .scope-map .neighborhood-label {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scope-map .leaflet-tile-pane {
+    transition: none;
+  }
+}
