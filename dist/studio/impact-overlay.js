@@ -1,4 +1,5 @@
 // Highlights are placed in the same local east/south meter frame as the model.
+import { environmentalVersion } from '../environment.js';
 import * as THREE from 'three';
 import { evaluateConstraints, clipToPolygon, constraintShapes } from './constraints.js';
 import { analyzePlacement } from './analysis.js';
@@ -307,7 +308,7 @@ export function createImpactOverlay(cropPlanes) {
     { enabled = true, lens, showRiver = true, showParcel = true, analysis } = {}
   ) {
     if (disposed) return result;
-    const next = point ? [point[0], point[1], angle].join('|') : 'no-build';
+    const next = point ? [point[0], point[1], angle, environmentalVersion()].join('|') : 'no-build';
     if (next !== key) {
       key = next;
       result = evaluateConstraints({ point, angle });
@@ -327,7 +328,11 @@ export function createImpactOverlay(cropPlanes) {
           intersect = [],
           edge = [],
           border = [];
-        const rings = result.overlaps.map(({ feature }) => clipToPolygon(feature, nearFootprint));
+        const rings = result.overlaps.flatMap(({ feature, holes = [] }) => {
+          let pieces = faces(feature).map(tri => clipToPolygon(tri, nearFootprint));
+          for(const hole of holes) for(const tri of faces(hole)) pieces = pieces.flatMap(p => subtract(p, tri));
+          return pieces;
+        });
         for (const region of disjointRegions(rings)) {
           // The corridor tint stops where the stronger footprint fill starts.
           for (const surrounding of subtract(region, footprint)) polygon(context, surrounding);

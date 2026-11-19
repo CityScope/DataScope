@@ -1,5 +1,6 @@
 import { createSentiment } from './sentiment.js';
-import { evaluateConstraints } from './studio/constraints.js';
+import { loadEnvironmentalLayers, onEnvironmentChange, environmentalSources, environmentalState } from './environment.js';
+import { evaluateConstraints, nearbyConstraints } from './studio/constraints.js';
 import { site, places, sources } from './geography.js';
 import { analyzePlacement } from './studio/analysis.js';
 import { createReadouts, displayNumber, methodsHTML } from './studio/readouts.js';
@@ -31,8 +32,8 @@ const ui = {
   view: 'studio',
   camera: 'site',
   mode: 'explore',
-  layers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true },
-  planLayers: { places: false, site: false, river: false, notes: true, sound: false, constraints: true },
+  layers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true, environment: true },
+  planLayers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true, environment: true },
   selectedNote: null,
   receptorId: 'riel'
 };
@@ -113,17 +114,27 @@ function renderMetrics(point = state.point) {
   const current = { ...state, point };
   const result = updateReadouts(current, ui.receptorId);
   const check = evaluateConstraints(current);
+  const warningTitles=[...new Set(check.items.map(i=>i.title))];
+  const finding=$('context-finding');
+  finding.dataset.status=check.status;
+  finding.title=warningTitles.join(' · ');
+  finding.textContent=check.items.length ? warningTitles.slice(0,2).join(' · ')+(warningTitles.length>2?' · +'+(warningTitles.length-2)+' more':'') : point ? 'No overlap with loaded constraints' : 'Choose a placement';
+  $('context-distances').innerHTML=nearbyConstraints(current).slice(0,2).map(i=>'<span>'+escapeHTML(i.label)+' <b>'+Math.round(i.distance*3.28084).toLocaleString()+' ft</b></span>').join('');
+  const pending=environmentalState.filter(s=>s.state==='loading'), missing=environmentalState.filter(s=>s.state==='unavailable');
+  $('environment-status').textContent=pending.length ? 'Loading '+pending.map(s=>s.label.toLowerCase()).join(', ')+'…' : missing.length ? 'Unavailable: '+missing.map(s=>s.label.toLowerCase()).join(', ') : 'Source overlays loaded · boundaries require review';
+  $('retry-environment').hidden=!missing.length;
+  $('environment-status').dataset.state=missing.length?'unavailable':pending.length?'loading':'ready';
   const hasFinding = check.items.length > 0;
   const banner = $('siting-check');
   banner.dataset.status = check.status;
   banner.textContent = hasFinding
-    ? check.items.map((item) => item.title).join(' · ')
+    ? warningTitles.join(' · ')
     : check.status === 'none'
       ? 'No building placed'
-      : 'No mapped conflict';
+      : 'No overlap found';
   banner.title = hasFinding
     ? check.items.map((item) => item.detail).join(' ')
-    : 'Screens the modeled railway, river, roads and selected buildings and community land uses.';
+    : 'Screens mapped railways, roads, river, buildings and land uses, plus environmental overlays that have loaded.';
   document
     .querySelector('.resources')
     .style.setProperty('--electricity', Math.min(100, (result.energyGWh / 200) * 100) + '%');
@@ -278,6 +289,7 @@ function setMode(mode) {
   drawMap();
 }
 function viewControls() {
+  $('zin').disabled=false; $('zout').disabled=false;
   const listening = ui.view === 'sentiment';
   document
     .querySelectorAll('[data-workview]')
@@ -302,6 +314,7 @@ function viewControls() {
 }
 function setCamera(view) {
   ui.camera = view;
+  $('stage').dataset.camera = view;
   renderMetrics();
   document
     .querySelectorAll('[data-camera]')
@@ -309,6 +322,7 @@ function setCamera(view) {
 }
 function aerialMap() {
   return (aerial ??= createMap($('map'), {
+    onZoomChange: ({canIn,canOut}) => {if(ui.view==='plan'){$('zin').disabled=!canIn;$('zout').disabled=!canOut;}},
     onPlace: placeAt,
     onNote: addNoteAt,
     onMarker: showNote,
@@ -580,7 +594,8 @@ function toggleLayerMenu() {
   if (opening)
     menu.innerHTML = Object.entries({
       sound: 'Equipment sound field',
-      constraints: 'Placement conflicts',
+      constraints: 'Land uses & exclusions',
+      environment: 'Environmental overlays',
       site: 'Proposed parcel',
       river: 'Ecorse River',
       places: 'Community places',
@@ -738,6 +753,9 @@ document.addEventListener('click', (e) => {
     methods: () => showDialog('Model assumptions', methodsHTML()),
     'add-note': actions['add-note'],
     layers: toggleLayerMenu,
+    'retry-environment': () => loadEnvironmentalLayers({retry:true}),
+    'context-info': () => showDialog('Siting constraints',
+      '<p>Red marks identify intersections with the depicted railways, river channel and roads. Amber marks identify land-use or environmental overlaps that need review. Distances are measured from the building edge to the approximate mapped land use.</p><p>The model is not a buildability approval. Parkland, existing buildings, easements, wetlands and flood zones have different restrictions; verify them with their source and the responsible agency.</p>'+environmentalSources.map(s=>'<div class="ref"><h3>'+escapeHTML(s.label)+'</h3><p>'+escapeHTML(s.detail)+'</p><a href="'+s.source+'" target="_blank" rel="noopener">Source information</a></div>').join('')),
     home: () => map?.home(),
     zin: () => map?.zoomBy(1),
     zout: () => map?.zoomBy(-1),
@@ -798,6 +816,7 @@ document.addEventListener('fullscreenchange', () => {
 });
 matchMedia('(max-width:700px)').addEventListener('change', () => {
   map?.resize();
+  if(ui.view==='plan') aerial?.home();
   sentiment?.resize(true);
 });
 window.addEventListener('storage', (e) => {
@@ -816,6 +835,8 @@ function fallback() {
   if (ui.view !== 'sentiment')
     toast('Using the plan view for this browser. Drag the footprint to test a placement.');
 }
+onEnvironmentChange(() => { renderMetrics(); drawMap(); });
+void loadEnvironmentalLayers();
 render();
 try {
   const module = await import('./studio/scene.js');

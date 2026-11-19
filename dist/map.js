@@ -1,5 +1,6 @@
-import { createBasemap } from './basemaps.js';
-import { evaluateConstraints } from './studio/constraints.js';
+import { createBasemap, mapInteraction, stepZoom } from './basemaps.js';
+import { environmentalFeatures, environmentalVersion } from './environment.js';
+import { evaluateConstraints, constraintFeatures, constraintCategories } from './studio/constraints.js';
 import { equipmentSourcePoint } from './studio/analysis.js';
 // The movable outline is an illustrative, single-storey 45,000 ft² rectangle.
 // Distances here are local tangent-plane distances for drawing, not a land survey.
@@ -78,7 +79,7 @@ function sourcePopup(title, description, url) {
   return body;
 }
 
-export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMoveEnd } = {}) {
+export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMoveEnd, onZoomChange } = {}) {
   element.classList.add('scope-map');
   const map = L.map(element, {
     center: site.center,
@@ -87,13 +88,13 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     maxZoom: 20,
     zoomControl: false,
     attributionControl: true,
-    zoomSnap: 0.25,
-    zoomDelta: 0.75,
-    wheelPxPerZoomLevel: 105,
+    ...mapInteraction,
     preferCanvas: false
   });
   map.attributionControl.setPrefix(false);
   makePane(map, 'scopeSketch', 180);
+  makePane(map, 'scopeLand', 370);
+  makePane(map, 'scopeEnvironment', 375);
   makePane(map, 'scopeContext', 385);
   makePane(map, 'scopeParcel', 400);
   makePane(map, 'scopeRoof', 435);
@@ -128,6 +129,37 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     onMoveEnd?.([c.lat, c.lng], map.getZoom());
   };
   map.on('moveend', panned);
+  const landGroup = L.layerGroup(), environmentGroup = L.layerGroup();
+  const contextPaths = new Map();
+  let environmentDrawn = -1;
+  const toGeo = ring => ring.map(([x,z])=>offset(site.center,x,-z));
+  function contextFeature(f, group, environmental=false) {
+    const category=constraintCategories[f.id], color=f.color || category.color;
+    const paths=[];
+    for(const piece of f.pieces) {
+      const path=L.polygon([toGeo(piece.poly),...(piece.holes||[]).map(toGeo)], {
+        pane:environmental?'scopeEnvironment':'scopeLand', color, weight:environmental?1.3:1,
+        opacity:0.8,fillColor:color,fillOpacity:environmental?0.19:0.13,
+        className:'screening-area '+(environmental?'environment-'+f.layer:'land-'+category.group),
+        bubblingMouseEvents:false
+      }).addTo(group);
+      path.bindTooltip(f.label || category.label,{sticky:true,className:'constraint-tooltip'});
+      path.on('click',e=>{
+        if(pickAt([e.latlng.lat,e.latlng.lng]))return;
+        L.popup({className:'scope-leaflet-popup'}).setLatLng(e.latlng)
+          .setContent(sourcePopup(f.label || category.label,f.detail,f.source || site.source)).openOn(map);
+      });
+      paths.push({path,color,environmental});
+    }
+    contextPaths.set(f.id,paths);
+  }
+  for(const feature of constraintFeatures) contextFeature(feature,landGroup);
+  function environmentalContext(){
+    if(environmentDrawn===environmentalVersion())return;
+    environmentDrawn=environmentalVersion();environmentGroup.clearLayers();
+    for(const key of [...contextPaths.keys()])if(key.includes(':'))contextPaths.delete(key);
+    for(const feature of environmentalFeatures)contextFeature(feature,environmentGroup,true);
+  }
   const placesGroup = L.layerGroup();
   const waterGroup = L.layerGroup();
   const parcelGroup = L.layerGroup();
@@ -174,18 +206,26 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     roofShape.setLatLngs(ring);
     impactGroup.clearLayers();
     const screening = evaluateConstraints({ point, angle });
+    const active=new Set(screening.items.map(i=>i.id));
+    for(const [id,paths] of contextPaths)for(const {path,color,environmental} of paths)path.setStyle({
+      color:active.has(id)?'#c54e3c':color,weight:active.has(id)?2.5:environmental?1.3:1,
+      fillOpacity:active.has(id)?0.34:environmental?0.19:0.13
+    });
+    const conflicts=screening.items.filter(i=>i.id!=='extent');
+    node.dataset.status=conflicts.length?screening.status:'clear';
+    node.querySelector('.scope-footprint-label').textContent=conflicts.length?'⚠ '+conflicts[0].title:'Data center';
     const color =
       state.layers?.constraints !== false && screening.items.length
         ? screening.status === 'conflict'
           ? '#ec533e'
           : '#e5a832'
         : '#59e0d3';
-    roofHalo.setStyle({ color });
+    roofHalo.setStyle({ color, weight: screening.items.length ? 6 : 3, opacity:screening.items.length ? 0.95 : 0.55 });
     roofShape.setStyle({ color });
     if (state.layers?.constraints !== false) {
       for (const part of screening.overlaps) {
         const polygon = part.clipped.map(([x, z]) => offset(site.center, x, -z));
-        L.polygon(polygon, { ...quiet, color, weight: 1, fillOpacity: 0.65 }).addTo(impactGroup);
+        L.polygon([polygon,...(part.clippedHoles||[]).map(toGeo)], { ...quiet, color, weight: 1, fillOpacity: 0.65 }).addTo(impactGroup);
       }
     }
     if (state.layers?.sound !== false) {
@@ -242,7 +282,8 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     L.DomEvent.stopPropagation(e);
     if (!panMoved) pickAt([e.latlng.lat, e.latlng.lng]);
   });
-  map.on('zoomend', () => {
+  map.on('zoomend', () => onZoomChange?.({canIn:map.getZoom()<map.getMaxZoom(),canOut:map.getZoom()>map.getMinZoom()}));
+  map.on('zoom', () => {
     if (state.point) setHandleSize(dragging ? dragCoords() : state.point, state.angle || 0);
   });
   let pending = 0;
@@ -390,6 +431,9 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     state = next;
     element.dataset.mode = state.mode;
     const layers = state.layers || {};
+    environmentalContext();
+    visible(landGroup, layers.constraints !== false);
+    visible(environmentGroup, layers.environment !== false);
     const image = './assets/plan-' + (state.design || 'reference') + '.webp';
     if (sprite.getAttribute('src') !== image) sprite.src = image;
     visible(parcelGroup, layers.site !== false);
@@ -399,6 +443,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     visible(notesGroup, layers.notes !== false);
     noteMarkers(state.notes || [], state.selectedNote);
     visible(roofGroup, Boolean(state.point));
+    if(!state.point) for(const paths of contextPaths.values())for(const {path,color,environmental} of paths)path.setStyle({color,weight:environmental?1.3:1,fillOpacity:environmental?0.19:0.13});
     visible(handle, Boolean(state.point));
     if (state.point && !dragging) {
       drawFootprint(state.point, state.angle || 0);
@@ -408,7 +453,9 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     }
   }
   function home() {
-    map.setView(state.point || site.center, 17.5, { animate: false });
+    map.fitBounds(L.latLngBounds([...site.boundary, ...places.map(p => [p.lat, p.lng]), ...(state.point ? [state.point] : [])]), {
+      paddingTopLeft: [65, 75], paddingBottomRight: [75, 145], maxZoom: 16.75, animate: false
+    });
   }
   function focus(coords, zoom) {
     map.setView(coords, zoom ?? map.getZoom(), { animate: false });
@@ -428,14 +475,14 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     render,
     focus,
     home,
-    zoomBy: (d) => map.setZoom(map.getZoom() + d),
+    zoomBy: (d) => stepZoom(map, d),
     setBase,
     resize,
     destroy() {
       ro.disconnect();
       cancelAnimationFrame(pending);
-      map.remove();
       basemap.destroy();
+      map.remove();
     }
   };
 }

@@ -1,4 +1,4 @@
-import { createBasemap } from './basemaps.js';
+import { createBasemap, mapInteraction, stepZoom } from './basemaps.js';
 import { createSentimentHeat } from './sentiment-heat.js';
 import { zones, discussions, stances, topics, phases, channels, provenance } from './sentiment-data.js';
 import { site, river } from './geography.js';
@@ -41,7 +41,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       <section class="sent-figure">
         <div id="discussion-map" aria-label="Interactive discussion map"></div>
         <div class="map-signature">Allen Park <span>+ Melvindale</span></div>
-        <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Street map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
+        <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Light map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
         <div class="sent-note-prompt" hidden>Choose a place to pin your workshop note. <button data-command="cancel">Cancel</button></div>
         <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Rings show each place’s viewpoint mix.</small><small class="heat-key">Heat: leading viewpoint · intensity: sample activity.</small><small class="proposal-key">◇ Proposed site</small></div>
       </section>
@@ -51,11 +51,12 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   const map = L.map(el.querySelector('#discussion-map'), {
     zoomControl: false,
     attributionControl: true,
-    zoomSnap: 0.1,
-    minZoom: 11,
+    ...mapInteraction,
+    minZoom: 12,
     maxZoom: 19,
     maxBoundsViscosity: 0.8
   });
+  map.on('zoomend', () => {el.querySelector('[data-command=in]').disabled=map.getZoom()>=map.getMaxZoom();el.querySelector('[data-command=out]').disabled=map.getZoom()<=map.getMinZoom();});
   const basemap = createBasemap(map, 'map');
   const heat = createSentimentHeat(map);
   let heatMode = true;
@@ -275,10 +276,10 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
         fit();
         break;
       case 'in':
-        map.zoomIn();
+        stepZoom(map, 1);
         break;
       case 'out':
-        map.zoomOut();
+        stepZoom(map, -1);
         break;
       case 'cancel':
         setNote(false);

@@ -77,7 +77,7 @@
               ><i data-icon="terrain"></i
               ><select id="base" aria-label="Plan basemap">
                 <option value="satellite">Satellite</option>
-                <option value="map">Street map</option>
+                <option value="map">Light map</option>
               </select></label
             >
             <div class="layer-wrap">
@@ -98,6 +98,12 @@
             <h2 id="question-title"></h2>
             <p id="question-caption"></p>
           </article>
+          <aside class="siting-context" id="siting-context" aria-label="Siting constraints">
+            <div class="context-heading"><strong>Siting context</strong><button id="context-info" aria-label="About map constraints">ⓘ</button></div>
+            <div class="context-key"><span style="--key:#ae645b">Rail &amp; roads</span><span style="--key:#51866b">Parks &amp; conservation</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
+            <p id="context-finding"></p><div id="context-distances"></div>
+            <small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button>
+          </aside>
           <div class="stage-bottom">
             <div class="stage-tools">
               <button id="move" aria-pressed="false"><i data-icon="move"></i>Move facility</button

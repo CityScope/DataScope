@@ -1,8 +1,10 @@
+import { environmentalState } from '../environment.js';
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { site, places, river } from '../geography.js';
 import { createFacility, createDistrict, tableBounds as BOARD } from './physical.js';
 import { analyzePlacement } from './analysis.js';
+import { createContextOverlay } from './context-overlay.js';
 import { createImpactOverlay } from './impact-overlay.js';
 
 const METERS_LAT = 111320;
@@ -424,6 +426,8 @@ export function makeScene(
   ];
   const impact = createImpactOverlay(cropPlanes);
   scene.add(impact.group);
+  const context = createContextOverlay(cropPlanes);
+  scene.add(context.group);
   const materialSet = new Set();
   for (const group of [district, sound, waterLine, parcel, listeningTrace, receptorRing]) {
     group.traverse((o) => {
@@ -472,6 +476,9 @@ export function makeScene(
   for (const place of places)
     addLabel(place.id, place.name, place.type, toLocal([place.lat, place.lng], 5));
   addLabel('river', 'Ecorse River', 'river', toLocal([42.27077, -83.20522], 2));
+  addLabel('rail', 'Rail corridor · keep clear', 'restriction', toLocal([42.269787, -83.208061], 3));
+  addLabel('wetland', 'Mapped wetlands', 'environment', toLocal([42.26785, -83.2077], 3));
+  addLabel('easement', 'Conservation easement', 'environment', toLocal([42.2695, -83.2097], 3));
   addLabel('street', 'Enterprise Dr', 'street', new THREE.Vector3(-105.3, 1, -74.55));
   const facilityTag = addLabel('facility', 'Data center', 'facility', new THREE.Vector3(0, 20, 0));
   const contour = addLabel('sound-contour', '55 dBA contour', 'contour', new THREE.Vector3());
@@ -652,6 +659,8 @@ export function makeScene(
           on &&
           Boolean(state.point) &&
           (item.tag.classList.contains('conflict') || (activeView !== 'building' && !moving));
+      else if (kind === 'restriction') on = on && activeView === 'district' && layers.constraints !== false;
+      else if (kind === 'environment') on = on && activeView === 'district' && layers.environment !== false && environmentalState.find(s=>s.id===(id==='wetland'?'wetlands':'open-space'))?.state==='ready';
       else if (kind === 'river') on = on && layers.river !== false;
       else if (kind === 'contour')
         on = on && activeView === 'site' && currentlyCropped && sound.visible && lastWidth > 490;
@@ -729,6 +738,7 @@ export function makeScene(
     );
   }
   function setFacility(point) {
+    context.update(state.layers,activeView === 'district');
     const result = impact.update(
       { point, angle: state.angle || 0, design: state.design },
       {
@@ -742,6 +752,7 @@ export function makeScene(
     );
     const on = state.layers?.constraints !== false && Boolean(point) && result.items.length > 0;
     facilityTag.tag.classList.toggle('conflict', on);
+    facilityTag.tag.dataset.status=result.status;
     const title = on ? result.items[0].title : 'Data center';
     if (facilityTag.tag.textContent !== title) facilityTag.tag.textContent = title;
     if (!point) {
@@ -1065,6 +1076,7 @@ export function makeScene(
       resizeObserver.disconnect();
       controls.dispose();
       environment.dispose();
+      context.dispose();
       impact.dispose();
       disposeTree(scene);
       renderer.dispose();

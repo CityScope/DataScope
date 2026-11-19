@@ -1,6 +1,7 @@
 // Geometries share the local physical model's axes: east is +x, south is +z.
 // The city exhibit supplies generalized rail, road and park outlines. Feature
 // widths are the ones drawn on the model; these are not surveyed rights of way.
+import { environmentalFeatures } from '../environment.js';
 import { site, river } from '../geography.js';
 import { modelBounds, industrialStructures, schoolStructures, seniorStructures } from './model-data.js';
 
@@ -139,7 +140,19 @@ export function clipToPolygon(subject, convex) {
   }
   return result;
 }
-const catalog = [];
+export const constraintFeatures = [];
+const catalog = constraintFeatures;
+export const constraintCategories = {
+  rail: { label: 'Rail corridor', color: '#ae645b', group: 'transport' },
+  river: { label: 'River channel', color: '#497e94', group: 'water' },
+  freeway: { label: 'I-94 carriageway', color: '#ae645b', group: 'transport' },
+  enterprise: { label: 'Enterprise Drive', color: '#ae645b', group: 'transport' },
+  street: { label: 'Neighborhood streets', color: '#ae645b', group: 'transport' },
+  park: { label: 'Public parkland', color: '#4d8c70', group: 'community' },
+  school: { label: 'School buildings', color: '#9c813e', group: 'community' },
+  senior: { label: 'Senior housing', color: '#9c813e', group: 'community' },
+  structure: { label: 'Existing buildings', color: '#92746a', group: 'buildings' }
+};
 function feature(id, title, detail, severity, polys) {
   const pieces = polys
     .filter((p) => p.length >= 3 && Math.abs(signedArea(p)) > 0.0001)
@@ -268,17 +281,44 @@ export function evaluateConstraints({ point, angle = 0 }) {
   const outside =
     box[2] < bounds.west || box[3] < bounds.north || box[0] > bounds.east || box[1] > bounds.south;
   if (!outside)
-    for (const { id, title, detail, severity, pieces } of catalog) {
+    for (const { id, title, detail, severity, pieces } of [...catalog, ...environmentalFeatures]) {
       let touches = false;
-      for (const { poly, bbox } of pieces) {
+      for (const { poly, bbox, holes = [] } of pieces) {
         if (!boundsTouch(box, bbox)) continue;
         const clipped = clipToPolygon(poly, footprint);
-        if (clipped.length < 3 || Math.abs(signedArea(clipped)) < 0.01) continue;
+        const clippedHoles = holes.map(h => clipToPolygon(h, footprint)).filter(h => h.length >= 3);
+        const area = Math.abs(signedArea(clipped)) - clippedHoles.reduce((sum,h)=>sum+Math.abs(signedArea(h)),0);
+        if (clipped.length < 3 || area < 0.01) continue;
         touches = true;
-        overlaps.push({ id, severity, clipped, feature: poly });
+        overlaps.push({ id, severity, clipped, clippedHoles, feature: poly, holes });
       }
       if (touches) items.push({ id, title, detail, severity });
     }
   items.sort((a, b) => Number(b.severity === 'conflict') - Number(a.severity === 'conflict'));
   return { status: items[0]?.severity || 'clear', items, footprint, overlaps };
+}
+
+// Edge-to-edge distances to the depicted land uses, in the same meter frame as
+// the collision tests. These are orientation aids, not statutory setback rules.
+export function nearbyConstraints({ point, angle = 0 }) {
+  if (!point) return [];
+  const result = evaluateConstraints({ point, angle });
+  if (result.items.some(i => i.id === 'extent')) return [];
+  function project(p, a, b) {
+    const dx = b[0]-a[0], dz = b[1]-a[1];
+    const t = Math.max(0, Math.min(1, ((p[0]-a[0])*dx+(p[1]-a[1])*dz)/(dx*dx+dz*dz || 1)));
+    return [a[0]+t*dx, a[1]+t*dz];
+  }
+  return catalog.filter(f => ['rail','park','school','senior'].includes(f.id)).map(f => {
+    let distance = Infinity, witness = null;
+    if (result.items.some(i => i.id === f.id)) distance = 0;
+    else for (const {poly} of f.pieces) for (let i=0; i<poly.length; i++) for (let j=0; j<result.footprint.length; j++) {
+      const a=poly[i], b=poly[(i+1)%poly.length], c=result.footprint[j], d=result.footprint[(j+1)%result.footprint.length];
+      for (const [p,q] of [[a,project(a,c,d)],[c,project(c,a,b)]]) {
+        const m=Math.hypot(p[0]-q[0],p[1]-q[1]);
+        if(m<distance){distance=m;witness=[p,q];}
+      }
+    }
+    return {id:f.id,label:constraintCategories[f.id].label,distance,witness};
+  }).sort((a,b)=>a.distance-b.distance);
 }
