@@ -15,12 +15,18 @@
     <link rel="stylesheet" href="map.css" />
     <link rel="stylesheet" href="studio/scene.css" />
     <link rel="stylesheet" href="editorial.css" />
-    <link rel="stylesheet" href="floating.css" />
+    <link rel="stylesheet" href="floating.css?v=20261118-remarks" />
     <script type="importmap">
-      { "imports": { "three": "./studio/vendor/three.module.js" } }
+      { "imports": {
+        "three": "./studio/vendor/three.module.js",
+        "./sentiment.js": "./sentiment.js?v=20261118-remarks",
+        "./sentiment-heat.js": "./sentiment-heat.js?v=20261118-remarks",
+        "./sentiment-field.js": "./sentiment-field.js?v=20261118-remarks",
+        "./sentiment-data.js": "./sentiment-data.js?v=20261118-remarks"
+      } }
     </script>
     <script defer src="vendor/leaflet.js"></script>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=20261118-remarks"></script>
   </head>
   <body>
     <header class="topbar">
