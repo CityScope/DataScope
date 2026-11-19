@@ -15,20 +15,25 @@
     <link rel="stylesheet" href="map.css?v=20261118-disc" />
     <link rel="stylesheet" href="studio/scene.css?v=20261118-disc" />
     <link rel="stylesheet" href="editorial.css" />
-    <link rel="stylesheet" href="floating.css?v=20261118-disc" />
+    <link rel="stylesheet" href="floating.css?v=20261119-physics" />
     <script type="importmap">
       { "imports": {
         "three": "./studio/vendor/three.module.js",
-        "./studio/readouts.js": "./studio/readouts.js?v=20261118-disc",
-        "./studio/scene.js": "./studio/scene.js?v=20261118-disc",
-        "./sentiment.js": "./sentiment.js?v=20261118-remarks",
-        "./sentiment-heat.js": "./sentiment-heat.js?v=20261118-remarks",
-        "./sentiment-field.js": "./sentiment-field.js?v=20261118-remarks",
-        "./sentiment-data.js": "./sentiment-data.js?v=20261118-remarks"
+        "./icons.js": "./icons.js?v=20261119-sources",
+        "./geography.js": "./geography.js?v=20261119-physics",
+        "./map.js": "./map.js?v=20261119-physics",
+        "./studio/analysis.js": "./studio/analysis.js?v=20261119-physics",
+        "./studio/constraints.js": "./studio/constraints.js?v=20261119-physics",
+        "./studio/readouts.js": "./studio/readouts.js?v=20261119-physics",
+        "./studio/scene.js": "./studio/scene.js?v=20261119-physics",
+        "./sentiment.js": "./sentiment.js?v=20261119-sources",
+        "./sentiment-heat.js": "./sentiment-heat.js?v=20261119-sources",
+        "./sentiment-field.js": "./sentiment-field.js?v=20261119-sources",
+        "./sentiment-data.js": "./sentiment-data.js?v=20261119-sources"
       } }
     </script>
     <script defer src="vendor/leaflet.js"></script>
-    <script type="module" src="app.js?v=20261118-disc"></script>
+    <script type="module" src="app.js?v=20261119-physics"></script>
   </head>
   <body>
     <header class="topbar">
@@ -95,7 +100,8 @@
           </div>
           <div class="design-choices" id="design-choices"></div>
           <div class="design-detail" id="design-detail"></div>
-          <p class="design-assumptions">All options share the modeled footprint and equipment sound level.</p>
+          <div class="design-specs" id="design-specs" aria-label="Selected design profile"></div>
+          <p class="design-assumptions">Same 17.3 MW IT load (45,000 sq ft pad) in Climate Zone 5A (MI). Sound varies by cooling design, distance, and building shielding.</p>
           <button id="evidence" class="evidence-link">
             <i data-icon="book"></i>Case evidence &amp; sources
           </button></div>

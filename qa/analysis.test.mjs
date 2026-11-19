@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { analyzePlacement, equipmentSourcePoint } from '../dist/studio/analysis.js';
+import {
+  analyzePlacement,
+  equipmentSourcePoint,
+  soundAtLocal,
+  soundContourLocal
+} from '../dist/studio/analysis.js';
 import { places, river, site } from '../dist/geography.js';
 
 const metersLatitude = 111320;
@@ -13,12 +18,17 @@ function close(actual, expected, tolerance = 1e-6) {
 }
 const initial = { point: site.center, angle: 0, design: 'reference' };
 
-test('reference footprint, watercourse and receiver produce a stable baseline with zero deltas', () => {
+test('reference footprint, watercourse, utility run and receiver produce a stable baseline with zero deltas', () => {
   const r = analyzePlacement(initial);
   close(r.parcelCoveragePct, 100);
   close(r.riverSetbackM, 234.52, 0.1);
-  close(r.soundDbA, 43.03, 0.02);
+  assert.ok(r.soundDbA > 45 && r.soundDbA < 50, `Expected ~47.4 dBA at John Riel Park, got ${r.soundDbA}`);
+  assert.ok(r.soundShieldingDb > 1.5, 'Main hall should acoustically shield the west yard from the park');
+  assert.ok(r.utilityRunM > 30 && r.utilityRunM < 150, `Expected realistic utility run to Enterprise Dr, got ${r.utilityRunM}`);
   assert.equal(r.receptorName, 'John Riel Memorial Park');
+  assert.equal(r.energyGWh, 182.2);
+  assert.equal(r.waterMGal, 52.9);
+  assert.equal(r.peakMW, 26);
   for (const v of Object.values(r.delta)) assert.equal(v, 0);
 });
 
@@ -45,50 +55,84 @@ test('river measurement detects a segment crossing even when its vertices lie ou
   assert(Math.abs(r.delta.riverSetbackM) > 5);
 });
 
-test('equipment source rotates with the building and the receiver follows point-source spreading', () => {
+test('equipment source rotates with the building, building shields the west yard, and sound falls with distance', () => {
   const source = equipmentSourcePoint(site.center, 90);
-  close(source[0], offset(site.center, 0, 20)[0]);
-  close(source[1], site.center[1]);
-  const park = places.find((p) => p.id === 'riel'),
-    parkPoint = [park.lat, park.lng];
-  // At angle zero the equipment yard is 20 m west of the building center.
-  const level = (d) => analyzePlacement({ point: offset(parkPoint, d + 20, 0) });
-  close(level(15).soundDbA, 65);
-  close(level(15).soundDbA - level(30).soundDbA, 20 * Math.log10(2));
-  assert(level(5).soundNearField);
-  close(level(5).soundDbA, 65);
+  const expected = offset(site.center, 6.0, 17.35);
+  close(source[0], expected[0], 1e-6);
+  close(source[1], expected[1], 1e-6);
+
+  // Sound falls monotonically with distance on the exposed west side.
+  const near = soundAtLocal(-60, 6, 'reference');
+  const mid = soundAtLocal(-120, 6, 'reference');
+  const far = soundAtLocal(-240, 6, 'reference');
+  assert.ok(near.total > mid.total + 5.5);
+  assert.ok(mid.total > far.total + 5.5);
+
+  // Rotating 180° turns the west mechanical yard toward John Riel Park, removing building shielding.
+  const shielded = analyzePlacement({ point: site.center, angle: 0, design: 'reference' });
+  const exposed = analyzePlacement({ point: site.center, angle: 180, design: 'reference' });
+  assert.ok(exposed.soundDbA > shielded.soundDbA + 2.5);
+  assert.equal(exposed.soundShieldingDb, 0);
+  assert.ok(shielded.soundShieldingDb > 1.5);
+
+  // Directional iso-dBA contours respond to both design and building acoustic shielding.
+  const westRadius = (design) => Math.abs(Math.min(...soundContourLocal(design, 55).map((p) => p[0])));
+  const eastRadius = (design) => Math.max(...soundContourLocal(design, 55).map((p) => p[0]));
+  assert.ok(westRadius('dry') > westRadius('reference'));
+  assert.ok(westRadius('reference') > westRadius('efficient'));
+  assert.ok(westRadius('reference') > eastRadius('reference') + 20);
+
   const school = analyzePlacement(initial, { receptorId: 'melvindale' });
   assert.equal(school.receptorName, 'Melvindale High School');
-  assert(school.soundDbA < analyzePlacement(initial).soundDbA);
+  assert(school.soundDbA < shielded.soundDbA);
   assert.equal(school.delta.soundDbA, 0);
+
+  const arno = analyzePlacement(initial, { receptorId: 'arno' });
+  assert.equal(arno.receptorName, 'Arno Ave homes');
+  assert(arno.soundDbA < shielded.soundDbA && arno.soundDbA > school.soundDbA);
 });
 
-test('resource use follows the facility design and does not change during placement', () => {
+test('cooling designs model realistic Zone 5A energy, peak MW, water, CO2 and acoustic tradeoffs', () => {
   const moved = analyzePlacement({ ...initial, point: offset(site.center, 100, 100) });
   assert(moved.delta.soundDbA !== 0);
+  assert(moved.delta.utilityRunM !== 0);
   assert.equal(moved.delta.energyGWh, 0);
   assert.equal(moved.delta.waterMGal, 0);
+
+  const ref = analyzePlacement(initial);
+  const eff = analyzePlacement({ ...initial, design: 'efficient' });
   const dry = analyzePlacement({ ...initial, design: 'dry' });
-  assert.equal(dry.energyGWh, 184);
-  assert.equal(dry.waterMGal, 0.3);
-  assert.equal(dry.peakMW, null);
-  const efficient = analyzePlacement({ ...initial, design: 'efficient' });
-  assert.equal(efficient.energyGWh, 151.8);
-  assert.equal(efficient.waterMGal, null);
-  assert.equal(efficient.peakMW, 21.7);
-  assert.equal(efficient.delta.waterMGal, null);
+
+  // Electricity, peak demand & carbon: efficient < reference < dry
+  assert.ok(eff.energyGWh < ref.energyGWh && ref.energyGWh < dry.energyGWh);
+  assert.ok(eff.peakMW < ref.peakMW && ref.peakMW < dry.peakMW);
+  assert.ok(eff.co2KtYr < ref.co2KtYr && ref.co2KtYr < dry.co2KtYr);
+
+  // Cooling water: dry < efficient < reference (all modeled, no nulls)
+  assert.ok(dry.waterMGal > 0 && dry.waterMGal < eff.waterMGal && eff.waterMGal < ref.waterMGal);
+  assert.ok(eff.delta.waterMGal < 0 && dry.delta.waterMGal < eff.delta.waterMGal);
+
+  // Equipment sound: efficient < reference < dry across every community place
+  for (const place of places) {
+    const r = analyzePlacement(initial, { receptorId: place.id });
+    const e = analyzePlacement({ ...initial, design: 'efficient' }, { receptorId: place.id });
+    const d = analyzePlacement({ ...initial, design: 'dry' }, { receptorId: place.id });
+    assert.ok(e.soundDbA < r.soundDbA - 2.5, `${place.id}: efficient should be quieter than reference`);
+    assert.ok(d.soundDbA > r.soundDbA + 3.5, `${place.id}: dry cooling should be louder than reference`);
+  }
+
   const none = analyzePlacement({ point: null });
-  for (const k of ['soundDbA', 'riverSetbackM', 'parcelCoveragePct', 'sourcePoint'])
+  for (const k of ['soundDbA', 'riverSetbackM', 'parcelCoveragePct', 'utilityRunM', 'sourcePoint'])
     assert.equal(none[k], null);
-  for (const k of ['energyGWh', 'waterMGal', 'peakMW']) assert.equal(none[k], 0);
+  for (const k of ['energyGWh', 'waterMGal', 'peakMW', 'co2KtYr']) assert.equal(none[k], 0);
   assert.equal(none.delta.energyGWh, -182.2);
 });
 
-
-test('river clearance does not extrapolate a local reach to off-table placements', () => {
+test('river clearance and utility tie-in do not extrapolate local geometry to off-table placements', () => {
   const result = analyzePlacement({ point: [42.21, -83.27], angle: 30 });
   assert.equal(result.riverOutOfCoverage, true);
   assert.equal(result.riverSetbackM, null);
   assert.equal(result.riverWitness, null);
+  assert.equal(result.utilityRunM, null);
   assert.equal(result.delta.riverSetbackM, null);
 });

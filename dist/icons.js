@@ -38,7 +38,17 @@ const paths = {
   download: '<path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/>',
   water: '<path d="M12 2S5 10 5 14a7 7 0 0 0 14 0c0-4-7-12-7-12Z"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>'
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  workshop: '<path d="M4 4h16v12h-9l-5 4v-4H4zM8 8h8M8 12h5"/>',
+  meeting:
+    '<circle cx="9" cy="7.5" r="3"/><path d="M3.5 19v-1a4.5 4.5 0 0 1 4.5-4.5h2A4.5 4.5 0 0 1 14.5 18v1"/><circle cx="16.8" cy="8.5" r="2.2"/><path d="M16.8 13.5c2.2 0 3.7 1.5 3.7 3.8V19"/>',
+  x: '<path d="M4 3h4l12 18h-4zM20 3 4 21"/>',
+  facebook:
+    '<path d="M14 22v-9h3l.5-4H14V7c0-1.2.4-2 2-2h2V1.5c-.6-.1-1.8-.2-3-.2-3 0-5 1.8-5 5V9H7v4h3v9z" fill="currentColor" stroke="none"/>',
+  reddit:
+    '<ellipse cx="12" cy="14" rx="8" ry="6"/><path d="m12 8 1.5-6 5 1M7 16q5 4 10 0"/><circle cx="20" cy="3" r="2"/><circle cx="8.5" cy="12" r=".8" fill="currentColor"/><circle cx="15.5" cy="12" r=".8" fill="currentColor"/><path d="M5 10C0 5 0 14 4 13M19 10c5-5 5 4 1 3"/>',
+  forum:
+    '<circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a13.5 13.5 0 0 0 0 18M12 3a13.5 13.5 0 0 1 0 18"/>'
 };
 export function icon(name) {
   return (

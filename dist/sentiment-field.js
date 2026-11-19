@@ -3,7 +3,7 @@
 export const stanceColors = { supportive:'#077968', conditional:'#cc9c32', concerned:'#bd523b' };
 export const stanceKeys = Object.keys(stanceColors);
 const rgb = [[7,121,104],[204,156,50],[189,82,59]];
-export const HEAT_BANDWIDTH_METERS = 16;
+export const HEAT_BANDWIDTH_METERS = 44;
 const tail = Math.exp(-4.5);
 export function densityField(samples, width, height, {cellSize=3, bandwidth=24}={}) {
   const columns=Math.ceil(width/cellSize), rows=Math.ceil(height/cellSize);

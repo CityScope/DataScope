@@ -1,7 +1,7 @@
 import { createBasemap, mapInteraction, stepZoom } from './basemaps.js';
 import { environmentalFeatures, environmentalVersion } from './environment.js';
 import { evaluateConstraints, constraintFeatures, constraintCategories } from './studio/constraints.js';
-import { equipmentSourcePoint } from './studio/analysis.js';
+import { soundContourLocal } from './studio/analysis.js';
 // The movable outline is an illustrative, single-storey 45,000 ft² rectangle.
 // Distances here are local tangent-plane distances for drawing, not a land survey.
 import { site, places, river } from './geography.js';
@@ -229,14 +229,20 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
       }
     }
     if (state.layers?.sound !== false) {
-      const source = equipmentSourcePoint(point, angle);
-      for (const radius of [150, 47.43]) {
-        L.circle(source, {
-          radius,
-          color: '#a662ac',
-          weight: 2,
-          dashArray: '5 3',
-          fillOpacity: 0.09,
+      for (const [level, opacity, weight] of [
+        [45, 0.06, 1.4],
+        [50, 0.08, 1.7],
+        [55, 0.11, 2.0]
+      ]) {
+        const ring = soundContourLocal(state.design || 'reference', level, 72).map(([east, north]) =>
+          p(east, north)
+        );
+        L.polygon(ring, {
+          color: level === 55 ? '#8a528f' : '#a662ac',
+          weight,
+          dashArray: level === 55 ? '4 3' : '5 4',
+          fillColor: '#9c4fa3',
+          fillOpacity: opacity,
           pane: 'scopeContext',
           interactive: false
         }).addTo(impactGroup);

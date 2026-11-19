@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { site, places, river } from '../geography.js';
 import { createFacility, createDistrict, tableBounds as BOARD } from './physical.js';
-import { analyzePlacement } from './analysis.js';
+import { analyzePlacement, soundContourLocal } from './analysis.js';
 import { createContextOverlay } from './context-overlay.js';
 import { createImpactOverlay } from './impact-overlay.js';
 
@@ -238,59 +238,58 @@ function dashedPath(points, color, width = 1) {
   return line;
 }
 
-// A low-opacity field with dashed equal-level contours. Its radius uses exactly
-// the 65 dBA at 15 m outdoor point-source assumption in the workshop analysis.
-function makeSoundField() {
-  const radius = 165,
-    group = new THREE.Group();
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 512;
-  const ctx = canvas.getContext('2d'),
-    mid = 256;
-  const gradient = ctx.createRadialGradient(mid, mid, 0, mid, mid, mid);
-  gradient.addColorStop(0, 'rgba(159,75,171,.32)');
-  gradient.addColorStop(0.3, 'rgba(160,71,170,.20)');
-  gradient.addColorStop(0.54, 'rgba(175,81,169,.11)');
-  gradient.addColorStop(1, 'rgba(165,138,215,0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 512, 512);
-  // The continuous tint and equal-level rings have separate jobs. Only one
-  // line is drawn at each radius, with a physical height above the tint.
-  for (const [level, opacity] of [
-    [45, 0.035],
-    [50, 0.05],
-    [55, 0.075]
-  ]) {
-    const px = ((15 * Math.pow(10, (65 - level) / 20)) / radius) * mid;
-    ctx.beginPath();
-    ctx.arc(mid, mid, px, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(152,73,151,' + opacity + ')';
-    ctx.fill();
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  const disc = new THREE.Mesh(
-    new THREE.PlaneGeometry(radius * 2, radius * 2),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false })
-  );
-  disc.rotation.x = -Math.PI / 2;
-  disc.position.y = 0.58;
-  disc.renderOrder = 4;
-  group.add(disc);
-  for (const level of [55, 50, 45]) {
-    const r = 15 * Math.pow(10, (65 - level) / 20),
-      p = [];
-    for (let i = 0; i <= 200; i++) {
-      const a = (i / 200) * Math.PI * 2;
-      p.push(new THREE.Vector3(Math.sin(a) * r, 0.79, Math.cos(a) * r));
-    }
-    const line = dashedPath(p, level === 55 ? '#8a588e' : '#976992');
+// Directional ISO 9613-2 sound contours (55, 50, 45 dBA) in facility-local
+// coordinates. They reflect both the active cooling design and the 10.6 m
+// data hall's acoustic shielding of the west mechanical yard.
+function makeSoundField(design, cropPlanes = []) {
+  const group = new THREE.Group();
+  const layers = [
+    [45, 0.06, '#9b6d9e', 0.62, 3.6],
+    [50, 0.085, '#966399', 0.76, 3.2],
+    [55, 0.125, '#8a528f', 0.94, 2.2]
+  ];
+  let labelLocal = new THREE.Vector3(-60, 0, 35);
+  layers.forEach(([level, fillOpacity, strokeColor, strokeOpacity, dashSize], i) => {
+    const ring = soundContourLocal(design, level, 84);
+    const shape = new THREE.Shape();
+    ring.forEach(([east, north], idx) => {
+      if (idx === 0) shape.moveTo(east, north);
+      else shape.lineTo(east, north);
+    });
+    shape.closePath();
+    const geom = new THREE.ShapeGeometry(shape);
+    geom.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: '#9c4fa3',
+      transparent: true,
+      opacity: fillOpacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+      clippingPlanes: cropPlanes
+    });
+    const fill = new THREE.Mesh(geom, mat);
+    fill.position.y = 0.54 + i * 0.025;
+    fill.renderOrder = 4 + i;
+    group.add(fill);
+
+    const pts = ring.map(([east, north]) => new THREE.Vector3(east, 0.79, -north));
+    pts.push(pts[0].clone());
+    const line = dashedPath(pts, strokeColor);
     line.material.toneMapped = false;
-    line.material.opacity = level === 55 ? 0.93 : level === 50 ? 0.74 : 0.62;
-    line.material.dashSize = level === 55 ? 2.2 : 3.5;
+    line.material.opacity = strokeOpacity;
+    line.material.dashSize = dashSize;
     line.material.gapSize = 2.6;
+    line.material.clippingPlanes = cropPlanes;
     group.add(line);
-  }
+
+    if (level === 55) {
+      // Place the 55 dBA contour label cleanly on the exposed southwest lobe.
+      const idx = Math.round((215 / 360) * ring.length) % ring.length;
+      labelLocal = new THREE.Vector3(ring[idx][0], 0.85, -ring[idx][1]);
+    }
+  });
+  group.userData.labelLocal = labelLocal;
   return group;
 }
 
@@ -461,8 +460,14 @@ export function makeScene(
     rotationGrip.setAttribute('aria-valuetext',angle+' degrees clockwise from north');
     rotationGrip.querySelector('span').textContent=angle+'°';
   }
-  const sound = makeSoundField(),
-    waterLine = makeRiver();
+  const cropPlanes = [
+    new THREE.Plane(new THREE.Vector3(1, 0, 0)),
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0)),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1)),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1))
+  ];
+  let sound = makeSoundField(design, cropPlanes);
+  const waterLine = makeRiver();
   const parcel = dashedPath(
     site.boundary.map((p) => toLocal(p, 0.81)),
     '#a36e30'
@@ -485,18 +490,12 @@ export function makeScene(
   receptorRing.rotation.x = -Math.PI / 2;
   scene.add(sound, waterLine, parcel, listeningTrace, receptorRing);
 
-  const cropPlanes = [
-    new THREE.Plane(new THREE.Vector3(1, 0, 0)),
-    new THREE.Plane(new THREE.Vector3(-1, 0, 0)),
-    new THREE.Plane(new THREE.Vector3(0, 0, 1)),
-    new THREE.Plane(new THREE.Vector3(0, 0, -1))
-  ];
   const impact = createImpactOverlay(cropPlanes);
   scene.add(impact.group);
   const context = createContextOverlay(cropPlanes);
   scene.add(context.group);
   const materialSet = new Set();
-  for (const group of [district, sound, waterLine, parcel, listeningTrace, receptorRing]) {
+  for (const group of [district, waterLine, parcel, listeningTrace, receptorRing]) {
     group.traverse((o) => {
       if (o.material) for (const mat of [].concat(o.material)) materialSet.add(mat);
     });
@@ -777,9 +776,10 @@ export function makeScene(
     const accepted = [];
     for (const { item, x, y } of visible.sort((a, b) => a.order - b.order)) {
       const width =
-        item.kind === 'facility'
-          ? item.tag.offsetWidth || Math.min(250, item.tag.textContent.length * 6.4 + 21)
-          : Math.min(244, item.tag.textContent.length * 6.1 + 20);
+        item.tag.offsetWidth ||
+        (item.kind === 'facility'
+          ? Math.min(250, item.tag.textContent.length * 6.4 + 21)
+          : Math.min(260, item.tag.textContent.length * 6.4 + 22));
       const height = item.kind === 'facility' ? 23 : 17;
       const left = THREE.MathUtils.clamp(
           x - width / 2 + (item.kind === 'facility' ? -23 : 0),
@@ -854,13 +854,15 @@ export function makeScene(
       { receptorId: state.receptorId }
     );
     const source = calculation.sourcePoint;
-    sound.position.copy(toLocal(source));
-    contour.where.copy(sound.position).add(new THREE.Vector3(-40, 0, 25.5));
+    sound.position.copy(pos);
+    sound.rotation.y = -THREE.MathUtils.degToRad(angle);
+    const contourOffset = sound.userData.labelLocal.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), sound.rotation.y);
+    contour.where.copy(pos).add(contourOffset);
     sound.visible =
       activeView !== 'building' && facilityAnchor.visible && state.layers?.sound !== false && state.layers?.noise !== false;
     const receiver = places.find((p) => p.id === state.receptorId) || places[0];
     const end = toLocal([receiver.lat, receiver.lng], 0.88);
-    const start = sound.position;
+    const start = toLocal(source, 0.88);
     const positions = listeningTrace.geometry.attributes.position,
       distances = listeningTrace.geometry.attributes.lineDistance;
     positions.setXYZ(0, start.x, 0.88, start.z);
@@ -877,7 +879,11 @@ export function makeScene(
       const tag = anchors.get(place.id).tag;
       tag.classList.toggle('ds-listening', selected);
       const label = selected
-        ? place.name + ' · ' + calculation.soundDbA.toFixed(1) + ' dBA'
+        ? place.name +
+          ' · ' +
+          calculation.soundDbA.toFixed(1) +
+          ' dBA' +
+          (calculation.soundShieldingDb >= 0.8 ? ' (shielded)' : '')
         : place.name;
       if (tag.textContent !== label) tag.textContent = label;
     }
@@ -888,9 +894,13 @@ export function makeScene(
     if (next.design && next.design !== design) {
       facilityAnchor.remove(asset);
       disposeTree(asset);
+      scene.remove(sound);
+      disposeTree(sound);
       design = next.design;
       asset = createFacility(design);
       facilityAnchor.add(asset);
+      sound = makeSoundField(design, cropPlanes);
+      scene.add(sound);
     }
     waterLine.visible = state.layers?.river !== false;
     parcel.visible = state.layers?.site !== false;

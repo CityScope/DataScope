@@ -3,6 +3,7 @@ import { loadEnvironmentalLayers, onEnvironmentChange, environmentalSources, env
 import { evaluateConstraints, nearbyConstraints } from './studio/constraints.js';
 import { site, places, sources } from './geography.js';
 import { createReadouts, methodsHTML } from './studio/readouts.js';
+import { designSpecs } from './studio/analysis.js';
 import { normalizeBearing } from './studio/rotation.js';
 import { createMap } from './map.js';
 import { icon, hydrateIcons } from './icons.js';
@@ -22,11 +23,7 @@ const escapeHTML = (value) =>
   );
 const id = () => crypto.randomUUID();
 const topics = ['Question', 'Suggestion', 'Concern', 'Local knowledge'];
-const designs = {
-  reference: { name: 'Reference design', subtitle: '26 MW reference load' },
-  efficient: { name: 'Higher efficiency', subtitle: '17% less annual electricity' },
-  dry: { name: 'Dry cooling', subtitle: '90% less cooling water' }
-};
+const designs = designSpecs;
 const state = loadWorkspace(site.center);
 const ui = {
   view: 'studio',
@@ -99,14 +96,20 @@ function renderControls() {
       b.disabled = noBuild();
       b.setAttribute('aria-pressed', !noBuild() && b.dataset.design === state.design);
     });
-  const detail = {
-    reference: 'Blue rooftop cooling cells with equipment along the west side.',
-    efficient:
-      'Green air intakes reduce electricity demand for the same computing load.',
-    dry: 'Copper fan banks use less cooling water, with slightly more electricity.'
-  };
-  $('design-detail').textContent = noBuild() ? '' : detail[state.design];
-  $('design-caption').textContent = noBuild() ? 'No facility placed' : 'Same computing workload';
+  const spec = designs[state.design] || designs.reference;
+  $('design-detail').textContent = noBuild() ? '' : spec.detail;
+  $('design-specs').hidden = noBuild();
+  if (!noBuild()) {
+    $('design-specs').innerHTML =
+      '<div><span>Summer peak</span><b>' +
+      spec.peakMW.toFixed(1) +
+      ' MW</b></div><div><span>Source @ 15 m</span><b>' +
+      spec.sourceDb15.toFixed(1) +
+      ' dBA</b></div><div><span>Est. grid CO₂</span><b>' +
+      spec.co2KtYr.toFixed(0) +
+      'k t/yr</b></div>';
+  }
+  $('design-caption').textContent = noBuild() ? 'No facility placed' : 'Same 17.3 MW IT load · Zone 5A (MI)';
 }
 function renderMetrics(point = state.point, angle = state.angle) {
   const current = { ...state, point, angle };
@@ -117,7 +120,7 @@ function renderMetrics(point = state.point, angle = state.angle) {
   finding.dataset.status=check.status;
   finding.title=warningTitles.join(' · ');
   finding.textContent=check.items.length ? warningTitles.slice(0,2).join(' · ')+(warningTitles.length>2?' · +'+(warningTitles.length-2)+' more':'') : point ? 'No overlap with loaded constraints' : 'Choose a placement';
-  $('context-distances').innerHTML=nearbyConstraints(current).slice(0,2).map(i=>'<span>'+escapeHTML(i.label)+' <b>'+Math.round(i.distance*3.28084).toLocaleString()+' ft</b></span>').join('');
+  $('context-distances').innerHTML=nearbyConstraints(current).slice(0,3).map(i=>'<span>'+escapeHTML(i.label)+' <b>'+Math.round(i.distance*3.28084).toLocaleString()+' ft</b></span>').join('');
   const pending=environmentalState.filter(s=>s.state==='loading'), missing=environmentalState.filter(s=>s.state==='unavailable');
   $('environment-status').textContent=pending.length ? 'Loading '+pending.map(s=>s.label.toLowerCase()).join(', ')+'…' : missing.length ? 'Unavailable: '+missing.map(s=>s.label.toLowerCase()).join(', ') : 'Source overlays loaded · boundaries require review';
   $('retry-environment').hidden=!missing.length;
@@ -186,7 +189,7 @@ function evidencePanel() {
   return (
     '<p class="hint">Allen Park’s Planning Commission denied the preliminary site plan on June 4, 2026. Its findings included unresolved engineering questions and noise near homes and a public park.</p><div class="ref"><a target="_blank" rel="noopener" href="' +
     cityRecords +
-    '">City planning record</a><p>7500 Enterprise Drive · Parcel 30-008-99-0001-712. Review the June decision and the January site drawings. The applicant moved outdoor equipment west so the building could shield the park and homes to the east.</p></div><div class="ref"><h3>Workshop assumptions</h3><p>The movable architectural model uses an illustrative 90 × 46 m footprint, approximately 45,000 sq ft. Neighborhood buildings, trees, and heights are generalized. The surveyed property, site layout, and engineering design require their own records.</p><p>The model calculates river clearance from the building edge and sound from the equipment yard to a selected community place. Site suitability, noise, water service and available grid capacity require further study.</p></div><div class="ref"><h3>Energy and water</h3><p>Scenarios use the DataCenterScope case study, pages 16–20 and 34–39. Energy uses an 80% load assumption. Water values are scenario inputs.</p></div>' +
+    '">City planning record</a><p>7500 Enterprise Drive · Parcel 30-008-99-0001-712. Review the June decision and the January site drawings. The applicant moved outdoor equipment west so the building could shield the park and homes to the east.</p></div><div class="ref"><h3>Workshop assumptions</h3><p>The movable architectural model uses an illustrative 90 × 46 m footprint, approximately 45,000 sq ft. Neighborhood buildings, trees, and heights are generalized. The surveyed property, site layout, and engineering design require their own records.</p><p>Equipment sound uses a two-source ISO 9613-2 propagation model (west mechanical yard + rooftop cooling units) with 3D building barrier shielding, cooling-system source levels, and atmospheric/ground attenuation. River clearance and Enterprise Drive utility run are measured from the rotated building edge. Site suitability, formal acoustic modeling, water service, and available grid capacity require further study.</p></div><div class="ref"><h3>Energy, peak load &amp; water (ASHRAE Zone 5A)</h3><p>All three cooling designs serve the same 17.3 MW peak IT workload (13.9 MW average at 80% load = 121.5 GWh/yr IT) in Southeast Michigan. Reference evaporative towers assume PUE 1.50 (26.0 MW peak) and LBNL WUE 1.65 L/kWh; higher-efficiency air-side economizers assume PUE 1.25 (22.9 MW hot-day peak) and WUE 0.38 L/kWh; closed-loop dry cooling assumes PUE 1.58 (29.1 MW hot-day peak) and WUE 0.012 L/kWh. Grid CO₂ uses the US EPA eGRID RFCM (Michigan) factor of 0.489 t CO₂/MWh.</p></div>' +
     sources
       .map(
         (s) =>
@@ -292,12 +295,16 @@ function changeView(view, notify = true) {
       onNote: addNoteAt,
       onMarker: showNote,
       onExplore: (point, zoneId) => {
-        const receptor = { park: 'riel', school: 'melvindale', maple: 'maple' }[zoneId];
+        const receptor = { park: 'riel', rail: 'riel', school: 'melvindale', maple: 'maple' }[zoneId];
         if (receptor) {
           ui.receptorId = receptor;
           $('receiver').value = receptor;
         }
-        ui.lens = zoneId === 'river' ? 'water' : zoneId === 'enterprise' ? 'parcel' : 'sound';
+        ui.lens = ['river', 'upper-stream', 'downstream'].includes(zoneId)
+          ? 'water'
+          : zoneId === 'enterprise'
+            ? 'parcel'
+            : 'sound';
         changeView('studio');
         drawMap();
         renderMetrics();

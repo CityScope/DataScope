@@ -309,7 +309,7 @@ export function nearbyConstraints({ point, angle = 0 }) {
     const t = Math.max(0, Math.min(1, ((p[0]-a[0])*dx+(p[1]-a[1])*dz)/(dx*dx+dz*dz || 1)));
     return [a[0]+t*dx, a[1]+t*dz];
   }
-  return catalog.filter(f => ['rail','park','school','senior'].includes(f.id)).map(f => {
+  return catalog.filter(f => ['rail','park','enterprise','school','senior'].includes(f.id)).map(f => {
     let distance = Infinity, witness = null;
     if (result.items.some(i => i.id === f.id)) distance = 0;
     else for (const {poly} of f.pieces) for (let i=0; i<poly.length; i++) for (let j=0; j<result.footprint.length; j++) {

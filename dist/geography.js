@@ -47,6 +47,14 @@ export const places = [
     source: parks
   },
   {
+    id: 'arno',
+    name: 'Arno Ave homes',
+    type: 'housing',
+    lat: 42.2678,
+    lng: -83.2041,
+    source: planning
+  },
+  {
     id: 'melvindale',
     name: 'Melvindale High School',
     type: 'school',
