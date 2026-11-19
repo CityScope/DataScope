@@ -2,8 +2,7 @@ import { createSentiment } from './sentiment.js';
 import { loadEnvironmentalLayers, onEnvironmentChange, environmentalSources, environmentalState } from './environment.js';
 import { evaluateConstraints, nearbyConstraints } from './studio/constraints.js';
 import { site, places, sources } from './geography.js';
-import { analyzePlacement } from './studio/analysis.js';
-import { createReadouts, displayNumber, methodsHTML } from './studio/readouts.js';
+import { createReadouts, methodsHTML } from './studio/readouts.js';
 import { createMap } from './map.js';
 import { icon, hydrateIcons } from './icons.js';
 import {
@@ -35,6 +34,7 @@ const ui = {
   layers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true, environment: true },
   planLayers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true, environment: true },
   selectedNote: null,
+  lens: 'sound',
   receptorId: 'riel'
 };
 const dialog = $('dialog');
@@ -44,7 +44,6 @@ let timer,
   studio,
   aerial,
   sentiment,
-  question = 0,
   sceneContains = () => true,
   unavailable = false,
   previousCustom = null,
@@ -90,10 +89,9 @@ function renderControls() {
   select.replaceChildren(...opts.map(([k, name]) => new Option(name, k)));
   select.value = state.active;
   $('count').textContent = state.notes.length;
-  $('notes').setAttribute('aria-label', 'Community notes (' + state.notes.length + ')');
+  $('notes').setAttribute('aria-label', 'Session notes (' + state.notes.length + ')');
   document.querySelector('[data-camera="building"]').disabled = noBuild();
   if (noBuild() && ui.camera === 'building') studio?.view('site');
-  $('save').disabled = noBuild();
   $('adjust').disabled = noBuild();
   $('design-choices')
     .querySelectorAll('button')
@@ -102,13 +100,13 @@ function renderControls() {
       b.setAttribute('aria-pressed', !noBuild() && b.dataset.design === state.design);
     });
   const detail = {
-    reference: 'The blue rooftop cells and west equipment yard represent the reference cooling layout.',
+    reference: 'Blue rooftop cooling cells with equipment along the west side.',
     efficient:
-      'Green louvered air intakes illustrate an economizer design. The scenario serves the same computing load with less electricity.',
-    dry: 'Copper fan banks reject heat to outdoor air. The scenario uses less cooling water and slightly more electricity.'
+      'Green air intakes reduce electricity demand for the same computing load.',
+    dry: 'Copper fan banks use less cooling water, with slightly more electricity.'
   };
   $('design-detail').textContent = noBuild() ? '' : detail[state.design];
-  $('design-caption').textContent = noBuild() ? 'No facility on the table' : 'Same computing workload';
+  $('design-caption').textContent = noBuild() ? 'No facility placed' : 'Same computing workload';
 }
 function renderMetrics(point = state.point) {
   const current = { ...state, point };
@@ -128,10 +126,10 @@ function renderMetrics(point = state.point) {
   const banner = $('siting-check');
   banner.dataset.status = check.status;
   banner.textContent = hasFinding
-    ? (check.status === 'conflict' ? 'Placement conflict' : 'Review placement') + ' · ' + warningTitles.length + (warningTitles.length === 1 ? ' finding' : ' findings')
+    ? (check.status === 'conflict' ? 'Conflict' : 'Review') + ' · ' + warningTitles.length
     : check.status === 'none'
-      ? 'No building placed'
-      : 'No overlap found';
+      ? 'No build'
+      : 'No overlap';
   banner.setAttribute('aria-label', 'Placement check: ' + banner.textContent + (hasFinding ? '. ' + warningTitles.join('. ') : ''));
   banner.title = hasFinding
     ? check.items.map((item) => item.detail).join(' ')
@@ -143,36 +141,7 @@ function renderMetrics(point = state.point) {
     .querySelector('.resources')
     .style.setProperty('--water-demand', Math.min(100, ((result.waterMGal || 0) / 3) * 100) + '%');
   document.querySelector('.resources').dataset.waterUnknown = result.waterMGal === null;
-  const inspect = ui.camera === 'building' && point;
-  const questions = [
-    [
-      'Who would hear the equipment?',
-      result.receptorName +
-        ' · ' +
-        displayNumber(result.soundDbA, 1) +
-        ' dBA from the modeled equipment.'
-    ],
-    [
-      'How close is the river?',
-      result.riverOutOfCoverage
-        ? 'Beyond mapped river coverage. Move the facility back into the illustrated district.'
-        : displayNumber(result.riverSetbackM == null ? null : result.riverSetbackM * 3.28084) +
-          ' ft from the building edge to the mapped river centerline.'
-    ],
-    [
-      'Does the building fit here?',
-      displayNumber(result.parcelCoveragePct) + '% of the footprint lies inside the proposed parcel.'
-    ]
-  ];
-  $('question-step').textContent = inspect
-    ? 'Design inspection'
-    : 'Siting question ' + (question + 1) + ' / 3';
-  $('question-title').textContent = inspect ? designs[state.design].name : questions[question][0];
-  $('question-caption').textContent = inspect
-    ? designs[state.design].subtitle
-    : point
-      ? questions[question][1]
-      : 'Choose a placement to explore this question.';
+
 }
 function renderDesigns() {
   $('design-choices').innerHTML = Object.entries(designs)
@@ -223,13 +192,13 @@ function notesPanel() {
     )
     .join('');
   return (
-    '<p class="hint">Mark where something matters to you. Each note keeps the placement you were viewing.</p><button class="wide" data-act="add-note">' +
+    '<p class="hint">Your notes from this browser, separate from the fictional discussions on the sentiment map. Each note keeps its location and scenario.</p><button class="wide" data-act="add-note">' +
     icon('pinplus') +
     'Place a note</button>' +
     (list ||
       '<div class="empty">' +
         icon('note') +
-        '<h3>No notes yet</h3><p class="hint">Choose a street, park or other place to leave your first question.</p></div>') +
+        '<h3>No session notes yet</h3><p class="hint">Choose a street, park or other place to leave your first question.</p></div>') +
     '<p class="minor">Notes are saved only in this browser on this device. They stay here after you refresh or reopen the site.</p>'
   );
 }
@@ -260,7 +229,7 @@ function drawMap() {
     mode: ui.mode,
     layers: ui.view === 'plan' ? ui.planLayers : ui.layers,
     selectedNote: ui.selectedNote,
-    lens: ['sound', 'water', 'parcel'][question],
+    lens: ui.lens,
     receptorId: ui.receptorId
   });
   $('modebar').hidden = ui.mode === 'explore';
@@ -299,23 +268,25 @@ function viewControls() {
       b.setAttribute('aria-pressed', b.dataset.workview === (listening ? 'sentiment' : 'studio'))
     );
   $('workspace-title').textContent = listening
-    ? 'What are people discussing?'
-    : 'Where should the data center go?';
+    ? 'Sentiment map · Allen Park, Michigan'
+    : 'Scenario Editor · Allen Park, Michigan';
   document.querySelector('.workbench').hidden = listening;
   document.querySelector('.analysis').hidden = listening;
-  document.querySelector('.case-actions').hidden = listening;
   $('sentiment').hidden = !listening;
   document.querySelector('.cam-modes').hidden = listening;
-  document.querySelector('.gesture-hint').textContent = ui.view === 'plan'
-    ? 'Drag the building to move it · Drag the map to pan'
-    : 'Drag the building to move it · Drag the ground to orbit';
   document.querySelector('.aerial-modes').hidden = ui.view !== 'plan';
   $('map').hidden = ui.view !== 'plan';
   $('scene').hidden = ui.view !== 'studio';
-  $('question-card').hidden = ui.view !== 'studio';
+}
+function closeEditorOnSmallScreen() {
+  if (!matchMedia('(max-width:700px)').matches) return;
+  $('editor-toggle').setAttribute('aria-expanded','false');
+  $('editor-content').hidden=true;
 }
 function setCamera(view) {
   ui.camera = view;
+  $('editor-current').textContent = {building:'Building design',site:'Site layout',district:'Neighborhood',plan:'Map overview'}[view];
+  $('editor-toggle').setAttribute('aria-label','Views and placement: ' + $('editor-current').textContent);
   $('stage').dataset.camera = view;
   renderMetrics();
   document
@@ -349,7 +320,7 @@ function changeView(view, notify = true) {
           ui.receptorId = receptor;
           $('receiver').value = receptor;
         }
-        question = zoneId === 'river' ? 1 : zoneId === 'enterprise' ? 2 : 0;
+        ui.lens = zoneId === 'river' ? 'water' : zoneId === 'enterprise' ? 'parcel' : 'sound';
         changeView('studio');
         drawMap();
         renderMetrics();
@@ -446,7 +417,7 @@ function addNoteAt(point) {
   ui.mode = 'explore';
   drawMap();
   showDialog(
-    'Add a community note',
+    'Add a session note',
     '<form id="note-form"><p class="hint">Pinned on the map · ' +
       escapeHTML(scenarioName()) +
       '</p><label class="field">Topic<select name="topic">' +
@@ -509,85 +480,6 @@ function showNote(noteId) {
       '<button data-act="close">Done</button></div>'
   );
 }
-function saveOption() {
-  if (!state.point) return;
-  if (state.scenarios.length >= WORKSHOP_LIMITS.scenarios) {
-    toast('This workshop has reached its saved placement limit.');
-    return;
-  }
-  showDialog(
-    'Save a siting option',
-    '<form id="save-form"><label class="field">Name this placement<input required maxlength="80" name="name" placeholder="e.g. West industrial parcel"></label><p class="hint">Keep its location, rotation and facility design for comparison.</p><div class="dialog-actions"><button type="button" data-act="close">Cancel</button><button class="primary">Save option</button></div></form>'
-  );
-  const form = $('save-form');
-  const findings = evaluateConstraints(state).items;
-  if (findings.length) {
-    const msg = document.createElement('p');
-    msg.className = 'finding-note';
-    msg.textContent = 'Flagged scenario · ' + findings.map((item) => item.title).join(' · ');
-    form.prepend(msg);
-  }
-  form.elements.name.focus();
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const name = form.elements.name.value.trim();
-    if (!name) return;
-    const s = { id: id(), name, ...snapshot() };
-    state.scenarios.push(s);
-    state.active = s.id;
-    store();
-    closeDialog();
-    render();
-    toast('Siting option saved.');
-  };
-}
-function compare() {
-  const options = [
-    { name: 'Proposed site', point: site.center, angle: 0, design: 'reference' },
-    setbackOption,
-    { name: 'No build', point: null, angle: 0, design: 'reference' },
-    ...state.scenarios
-  ];
-  if (state.active === 'custom') options.push({ name: 'My placement', ...snapshot() });
-  const body = options
-    .map((o) => {
-      const screened = evaluateConstraints(o);
-      const conflicts =
-        screened.items.map((item) => item.title).join(' · ') || (o.point ? 'No mapped conflict' : '—');
-      const a = analyzePlacement(o, { receptorId: ui.receptorId });
-      const number = (v, unit, dec = 0) => (v == null ? '—' : displayNumber(v, dec) + ' ' + unit);
-      return (
-        '<tr><td><b>' +
-        escapeHTML(o.name) +
-        '</b><small>' +
-        (o.point ? designs[o.design].name : 'No facility') +
-        '</small></td><td>' +
-        escapeHTML(conflicts) +
-        '</td><td>' +
-        number(a.soundDbA, 'dBA', 1) +
-        '</td><td>' +
-        (a.riverOutOfCoverage ? 'Beyond coverage' : number(a.riverSetbackM == null ? null : a.riverSetbackM * 3.28084, 'ft')) +
-        '</td><td>' +
-        number(a.parcelCoveragePct, '%') +
-        '</td><td>' +
-        number(a.energyGWh, 'GWh', 1) +
-        '</td><td>' +
-        (a.waterMGal === null ? 'Unmodeled' : number(a.waterMGal, 'M gal', 1)) +
-        '</td></tr>'
-      );
-    })
-    .join('');
-  showDialog(
-    'Compare siting options',
-    '<p class="hint">Equipment sound is modeled at ' +
-      escapeHTML(places.find((p) => p.id === ui.receptorId).name) +
-      '. Resource estimates are annual.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Placement check</th><th>Sound</th><th>River clearance</th><th>Inside parcel</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
-      body +
-      '</tbody></table></div><p class="minor">The southwest setback is an illustrative placement, not an approved alternative. Save more placements to include them here. No build adds zero water and electricity demand.</p>',
-    true
-  );
-}
-
 function toggleLayerMenu() {
   const menu = $('layers-menu'),
     opening = menu.hidden;
@@ -601,7 +493,7 @@ function toggleLayerMenu() {
       site: 'Proposed parcel',
       river: 'Ecorse River',
       places: 'Community places',
-      notes: 'Community notes'
+      notes: 'Session notes'
     })
       .map(
         ([k, label]) =>
@@ -625,7 +517,6 @@ function toggleFull() {
 const actions = {
   'add-note': () => setMode('note'),
   move: () => setMode('place'),
-  save: saveOption,
   'cancel-mode': () => setMode('explore'),
   center: () => {
     if (ui.mode === 'note') addNoteAt(mapCenter);
@@ -673,14 +564,7 @@ document.addEventListener('click', (e) => {
     changeView(b.dataset.workview);
     return;
   }
-  if (b.id === 'prev-question' || b.id === 'next-question') {
-    question = (question + (b.id === 'next-question' ? 1 : 2)) % 3;
-    drawMap();
-    studio?.view(['site', 'district', 'district'][question]);
-    renderMetrics();
-    return;
-  }
-  if (b.id === 'design-toggle' || b.id === 'context-toggle') {
+  if (b.id === 'design-toggle' || b.id === 'context-toggle' || b.id === 'editor-toggle') {
     const open = b.getAttribute('aria-expanded') !== 'true';
     b.setAttribute('aria-expanded', open);
     $(b.getAttribute('aria-controls')).hidden = !open;
@@ -717,6 +601,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (b.dataset.camera) {
+    closeEditorOnSmallScreen();
     if (b.dataset.camera === 'plan') {
       changeView('plan');
       map?.home();
@@ -752,11 +637,9 @@ document.addEventListener('click', (e) => {
   }
   const top = {
       full: toggleFull,
-    compare,
-    save: saveOption,
-    adjust,
-    move: () => setMode(ui.mode === 'place' ? 'explore' : 'place'),
-    notes: () => showDialog('Community notes', notesPanel()),
+      adjust,
+    move: () => { setMode(ui.mode === 'place' ? 'explore' : 'place'); closeEditorOnSmallScreen(); },
+    notes: () => showDialog('Session notes', notesPanel()),
     evidence: () => showDialog('Case evidence', evidencePanel()),
     methods: () => showDialog('Model assumptions', methodsHTML()),
     'add-note': actions['add-note'],
@@ -785,6 +668,7 @@ document.addEventListener('change', (e) => {
   }
   if (t.id === 'placement') {
     choose(t.value);
+    closeEditorOnSmallScreen();
     return;
   }
   if (t.id === 'receiver') {
@@ -834,7 +718,7 @@ window.addEventListener('storage', (e) => {
   render();
 });
 hydrateIcons();
-if (matchMedia('(max-width:700px)').matches) for (const name of ['design', 'context']) {
+if (matchMedia('(max-width:700px)').matches) for (const name of ['design', 'context', 'editor']) {
   $(name + '-toggle').setAttribute('aria-expanded', 'false');
   $(name + '-content').hidden = true;
 }
@@ -845,7 +729,7 @@ function fallback() {
   $('loading').hidden = true;
   if (ui.view !== 'sentiment') changeView('plan', false);
   if (ui.view !== 'sentiment')
-    toast('Using the plan view for this browser. Drag the footprint to test a placement.');
+    toast('Using the map overview for this browser. Drag the footprint to test a placement.');
 }
 onEnvironmentChange(() => { renderMetrics(); drawMap(); });
 void loadEnvironmentalLayers();

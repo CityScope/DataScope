@@ -178,7 +178,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       visible.length +
       ' discussions</b>' +
       (selected
-        ? '<button data-command="all">All places</button><button data-command="explore">View on table</button>'
+        ? '<button data-command="all">All places</button><button data-command="explore">Open in editor</button>'
         : '<span>' +
           zones.filter((z) => rows.some((r) => r.zoneId === z.id)).length +
           ' places</span>') +
@@ -324,7 +324,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       pins.clearLayers();
       for (const n of notes) {
         const m = L.marker([n.lat, n.lng], {
-          title: 'Workshop note · ' + n.topic,
+          title: 'Session note · ' + n.topic,
           icon: L.divIcon({ className: 'actual-note', html: '✎', iconSize: [23, 23] })
         }).addTo(pins);
         m.on('click', () => onMarker(n.id));

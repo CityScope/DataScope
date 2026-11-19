@@ -397,8 +397,8 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
         b.append(symbol('note'));
         marker = L.marker([n.lat, n.lng], {
           pane: 'scopeNotes',
-          alt: 'Open community note',
-          title: 'Open community note',
+          alt: 'Open session note',
+          title: 'Open session note',
           icon: icon('scope-note-marker', b, [28, 28], [14, 14])
         });
         marker.on('click', () => {

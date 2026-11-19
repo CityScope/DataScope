@@ -330,7 +330,7 @@ export function makeScene(
   canvas.tabIndex = 0;
   canvas.setAttribute(
     'aria-label',
-    '3D data center scenario table. Drag the building to move it. Drag the terrain to orbit, scroll to zoom, or use arrow keys to move the facility.'
+    '3D data center Scenario Editor. Drag the building to move it. Drag the terrain to orbit, scroll to zoom, or use arrow keys to move the facility.'
   );
   let renderer;
   try {

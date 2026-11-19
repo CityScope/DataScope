@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
-    <title>DataScope · Allen Park scenario table</title>
+    <title>DataScope · Allen Park Scenario Editor</title>
     <meta
       name="description"
       content="Move a 3D data center through Allen Park and explore modeled sound, river clearance, land use and resource demand with your community."
@@ -25,109 +25,61 @@
   <body>
     <header class="topbar">
       <a class="brand" href="./" aria-label="DataScope home"
-        ><img src="assets/mark.svg" alt="" />DataScope<span>.</span></a
+        >DataScope<span>.</span></a
       >
-      <div class="partners">
-        <span>CityScope</span><img src="assets/city-science.svg" alt="MIT City Science" /><img
-          src="assets/mit-media-lab.svg"
-          alt="MIT Media Lab"
-        />
+      <div class="partners" aria-label="MIT research groups">
+        <a href="https://www.media.mit.edu/groups/city-science/overview/" target="_blank" rel="noopener" aria-label="MIT City Science" title="MIT City Science"><img src="assets/city-science.svg" alt="" /></a>
+        <a href="https://www.media.mit.edu/" target="_blank" rel="noopener" aria-label="MIT Media Lab" title="MIT Media Lab"><img src="assets/mit-media-lab.svg" alt="" /></a>
       </div>
       <nav class="views" aria-label="Workspace view">
-        <button data-workview="studio" aria-pressed="true"><i data-icon="cube"></i>Scenario table</button
+        <button data-workview="studio" aria-pressed="true"><i data-icon="cube"></i>Scenario Editor</button
         ><button data-workview="sentiment" aria-pressed="false">
           <i data-icon="map"></i>Sentiment map
         </button>
       </nav>
       <div class="top-actions">
-        <button id="notes"><i data-icon="note"></i><span>Notes</span><b id="count">0</b></button
+        <button id="notes"><i data-icon="note"></i><span>Session notes</span><b id="count">0</b></button
         ><button id="full" class="icon-btn" aria-label="Enter full screen" title="Full screen">
           <i data-icon="expand"></i></button
-        ><button id="add-note" class="primary"><i data-icon="pinplus"></i>Add note</button>
+        ><button id="add-note" class="primary" aria-label="Add session note"><i data-icon="pinplus"></i>Add note</button>
       </div>
     </header>
     <main>
-      <section class="casehead">
-        <div class="case-title">
-          <div class="kicker"><i data-icon="loc"></i>Allen Park, Michigan</div>
-          <h1 id="workspace-title">Where should the data center go?</h1>
-        </div>
-        <div class="case-actions">
-          <label class="placement-select"
-            ><i data-icon="footprint"></i
-            ><select id="placement" aria-label="Active placement"></select
-            ><i data-icon="chevron"></i></label
-          ><button id="save" title="Save this placement">
-            <i data-icon="save"></i><span>Save option</span></button
-          ><button id="compare"><i data-icon="compare"></i>Compare</button>
-        </div>
-      </section>
+      <h1 class="sr-only" id="workspace-title">Scenario Editor · Allen Park, Michigan</h1>
       <div class="workbench">
         <section class="stage" id="stage" aria-label="Interactive Allen Park model">
           <div id="scene" aria-label="Three-dimensional neighborhood and movable data center"></div>
           <div id="map" hidden aria-label="North-up map of Allen Park"></div>
           <div id="loading"><i></i><span>Preparing neighborhood model…</span></div>
-          <div class="stage-top">
-            <div class="cam-modes" role="group" aria-label="Camera view">
-              <button data-camera="building" aria-pressed="false">Inspect design</button
-              ><button data-camera="site" aria-pressed="true">Site</button
-              ><button data-camera="district" aria-pressed="false">District</button
-              ><button data-camera="plan" aria-pressed="false">Plan</button>
-            </div>
-            <label class="aerial-modes" hidden
-              ><i data-icon="terrain"></i
-              ><select id="base" aria-label="Plan basemap">
-                <option value="map">Light map</option>
-                <option value="satellite">Satellite</option>
-              </select></label
-            >
-            <div class="layer-wrap">
-              <button id="layers" aria-expanded="false" aria-controls="layers-menu">
-                <i data-icon="layers"></i>Layers
-              </button>
-              <div hidden id="layers-menu" class="popover"></div>
-            </div>
-          </div>
-          <article class="question-card" id="question-card" aria-label="Guided siting questions">
-            <div class="question-nav">
-              <span id="question-step"></span>
-              <div>
-                <button id="prev-question" aria-label="Previous siting question">‹</button
-                ><button id="next-question" aria-label="Next siting question">›</button>
+          <aside class="editor-tools" aria-label="Scenario controls">
+            <button id="editor-toggle" class="panel-toggle" aria-expanded="true" aria-controls="editor-content"><span><i data-icon="controls"></i><span id="editor-current">Views &amp; placement</span></span><i data-icon="chevron"></i></button>
+            <div id="editor-content">
+              <label class="placement-select"><i data-icon="footprint"></i><select id="placement" aria-label="Active placement"></select><i data-icon="chevron"></i></label>
+              <div class="cam-modes editor-views" role="group" aria-label="View scale">
+                <button data-camera="building" aria-pressed="false" title="Inspect the building and cooling equipment in 3D"><i data-icon="inspect"></i><span>Building design</span></button>
+                <button data-camera="site" aria-pressed="true" title="Explore the site layout in 3D"><i data-icon="footprint"></i><span>Site layout</span></button>
+                <button data-camera="district" aria-pressed="false" title="Explore the surrounding neighborhood in 3D"><i data-icon="housing"></i><span>Neighborhood</span></button>
+                <button data-camera="plan" aria-pressed="false" title="Explore the north-up map and geographic constraints"><i data-icon="map"></i><span>Map overview</span></button>
               </div>
+              <div class="editor-actions">
+                <button id="move" aria-pressed="false"><i data-icon="move"></i>Move facility</button>
+                <button id="adjust" class="icon-btn" title="Rotate or nudge facility" aria-label="Rotate or nudge facility"><i data-icon="rotate"></i></button>
+              </div>
+              <div class="editor-navigation"><span>Zoom</span><div class="zoom">
+                <button id="zout" aria-label="Zoom out">−</button><button id="zin" aria-label="Zoom in">+</button><button id="home" aria-label="Reset view" title="Reset view"><i data-icon="expand"></i></button>
+              </div></div>
+              <div class="editor-map-tools">
+                <label class="aerial-modes" hidden><select id="base" aria-label="Map background"><option value="map">Light map</option><option value="satellite">Satellite</option></select></label>
+                <div class="layer-wrap"><button id="layers" aria-expanded="false" aria-controls="layers-menu"><i data-icon="layers"></i>Layers</button></div>
+              </div><div hidden id="layers-menu" class="popover"></div>
+              <section class="siting-context" id="siting-context" aria-label="Siting constraints">
+                <div class="context-heading"><button class="panel-toggle" id="context-toggle" aria-expanded="false" aria-controls="context-content">Map constraints<i data-icon="chevron"></i></button><button id="context-info" aria-label="About map constraints">ⓘ</button></div>
+                <div id="context-content" hidden><div class="context-key"><span style="--key:#ae645b">Rail &amp; roads</span><span style="--key:#51866b">Parks &amp; conservation</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
+                  <p id="context-finding"></p><div id="context-distances"></div><small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button>
+                </div>
+              </section>
             </div>
-            <h2 id="question-title"></h2>
-            <p id="question-caption"></p>
-          </article>
-          <aside class="siting-context" id="siting-context" aria-label="Siting constraints">
-            <div class="context-heading"><button class="panel-toggle" id="context-toggle" aria-expanded="true" aria-controls="context-content">Siting context<i data-icon="chevron"></i></button><button id="context-info" aria-label="About map constraints">ⓘ</button></div>
-            <div id="context-content"><div class="context-key"><span style="--key:#ae645b">Rail &amp; roads</span><span style="--key:#51866b">Parks &amp; conservation</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
-            <p id="context-finding"></p><div id="context-distances"></div>
-            <small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button></div>
           </aside>
-          <div class="stage-bottom">
-            <div class="stage-tools">
-              <button id="move" aria-pressed="false"><i data-icon="move"></i>Move facility</button
-              ><button
-                id="adjust"
-                class="icon-btn"
-                title="Rotate or nudge facility"
-                aria-label="Rotate or nudge facility"
-              >
-                <i data-icon="rotate"></i>
-              </button>
-            </div>
-            <span class="gesture-hint"
-              >Drag the building to move it <b>·</b> Drag the ground to orbit</span
-            >
-            <div class="zoom">
-              <button id="zout" aria-label="Zoom out">−</button
-              ><button id="zin" aria-label="Zoom in">+</button
-              ><button id="home" aria-label="Reset camera" title="Reset camera">
-                <i data-icon="expand"></i>
-              </button>
-            </div>
-          </div>
           <div id="modebar" hidden></div>
         </section>
         <aside class="design-tray" aria-label="Facility design options">
@@ -154,17 +106,11 @@
         </aside>
       </div>
       <section class="analysis" aria-label="Live scenario analysis">
-        <div class="analysis-head">
-          <div><span class="pulse"></span>Live analysis</div>
-          <small>Against proposed site</small
-          ><button id="methods" class="icon-btn" aria-label="How the estimates are calculated">
-            <i data-icon="info"></i>
-          </button>
+        <div class="analysis-head"><div><span class="pulse"></span>Live analysis</div>
+          <div class="siting-cell"><button id="siting-check" title="Check the footprint"></button></div>
+          <button id="methods" class="icon-btn" aria-label="How the estimates are calculated"><i data-icon="info"></i></button>
         </div>
         <div class="metrics" id="metrics"></div>
-        <div class="siting-cell">
-          <span>Placement check</span><button id="siting-check" title="Check the footprint"></button>
-        </div>
       </section>
       <section id="sentiment" hidden aria-label="Map of simulated community discussions"></section>
       <span class="sr-only" id="local-status" role="status">Notes stay on this device</span>
