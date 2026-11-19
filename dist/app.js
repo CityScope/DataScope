@@ -128,10 +128,11 @@ function renderMetrics(point = state.point) {
   const banner = $('siting-check');
   banner.dataset.status = check.status;
   banner.textContent = hasFinding
-    ? warningTitles.join(' · ')
+    ? (check.status === 'conflict' ? 'Placement conflict' : 'Review placement') + ' · ' + warningTitles.length + (warningTitles.length === 1 ? ' finding' : ' findings')
     : check.status === 'none'
       ? 'No building placed'
       : 'No overlap found';
+  banner.setAttribute('aria-label', 'Placement check: ' + banner.textContent + (hasFinding ? '. ' + warningTitles.join('. ') : ''));
   banner.title = hasFinding
     ? check.items.map((item) => item.detail).join(' ')
     : 'Screens mapped railways, roads, river, buildings and land uses, plus environmental overlays that have loaded.';
@@ -291,6 +292,7 @@ function setMode(mode) {
 function viewControls() {
   $('zin').disabled=false; $('zout').disabled=false;
   const listening = ui.view === 'sentiment';
+  document.body.dataset.workspace = listening ? 'sentiment' : 'scenario';
   document
     .querySelectorAll('[data-workview]')
     .forEach((b) =>
@@ -678,6 +680,12 @@ document.addEventListener('click', (e) => {
     renderMetrics();
     return;
   }
+  if (b.id === 'design-toggle' || b.id === 'context-toggle') {
+    const open = b.getAttribute('aria-expanded') !== 'true';
+    b.setAttribute('aria-expanded', open);
+    $(b.getAttribute('aria-controls')).hidden = !open;
+    return;
+  }
   if (b.id === 'siting-check') {
     const report = evaluateConstraints(state);
     const finding = report.items
@@ -826,6 +834,10 @@ window.addEventListener('storage', (e) => {
   render();
 });
 hydrateIcons();
+if (matchMedia('(max-width:700px)').matches) for (const name of ['design', 'context']) {
+  $(name + '-toggle').setAttribute('aria-expanded', 'false');
+  $(name + '-content').hidden = true;
+}
 renderDesigns();
 function fallback() {
   if (unavailable) return;

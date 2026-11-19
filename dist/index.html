@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="map.css" />
     <link rel="stylesheet" href="studio/scene.css" />
     <link rel="stylesheet" href="editorial.css" />
+    <link rel="stylesheet" href="floating.css" />
     <script type="importmap">
       { "imports": { "three": "./studio/vendor/three.module.js" } }
     </script>
@@ -64,7 +65,7 @@
       <div class="workbench">
         <section class="stage" id="stage" aria-label="Interactive Allen Park model">
           <div id="scene" aria-label="Three-dimensional neighborhood and movable data center"></div>
-          <div id="map" hidden aria-label="North-up satellite plan of Allen Park"></div>
+          <div id="map" hidden aria-label="North-up map of Allen Park"></div>
           <div id="loading"><i></i><span>Preparing neighborhood model…</span></div>
           <div class="stage-top">
             <div class="cam-modes" role="group" aria-label="Camera view">
@@ -76,8 +77,8 @@
             <label class="aerial-modes" hidden
               ><i data-icon="terrain"></i
               ><select id="base" aria-label="Plan basemap">
-                <option value="satellite">Satellite</option>
                 <option value="map">Light map</option>
+                <option value="satellite">Satellite</option>
               </select></label
             >
             <div class="layer-wrap">
@@ -99,10 +100,10 @@
             <p id="question-caption"></p>
           </article>
           <aside class="siting-context" id="siting-context" aria-label="Siting constraints">
-            <div class="context-heading"><strong>Siting context</strong><button id="context-info" aria-label="About map constraints">ⓘ</button></div>
-            <div class="context-key"><span style="--key:#ae645b">Rail &amp; roads</span><span style="--key:#51866b">Parks &amp; conservation</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
+            <div class="context-heading"><button class="panel-toggle" id="context-toggle" aria-expanded="true" aria-controls="context-content">Siting context<i data-icon="chevron"></i></button><button id="context-info" aria-label="About map constraints">ⓘ</button></div>
+            <div id="context-content"><div class="context-key"><span style="--key:#ae645b">Rail &amp; roads</span><span style="--key:#51866b">Parks &amp; conservation</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
             <p id="context-finding"></p><div id="context-distances"></div>
-            <small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button>
+            <small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button></div>
           </aside>
           <div class="stage-bottom">
             <div class="stage-tools">
@@ -130,7 +131,8 @@
           <div id="modebar" hidden></div>
         </section>
         <aside class="design-tray" aria-label="Facility design options">
-          <div class="tray-title">
+          <button class="panel-toggle" id="design-toggle" aria-expanded="true" aria-controls="design-content"><span>Design alternatives</span><i data-icon="chevron"></i></button>
+          <div id="design-content"><div class="tray-title">
             <span class="kicker">Design alternatives</span>
             <h2>Choose the cooling system</h2>
             <span id="design-caption">Same computing workload</span>
@@ -148,7 +150,7 @@
           </section>
           <button id="evidence" class="evidence-link">
             <i data-icon="book"></i>Case evidence &amp; sources
-          </button>
+          </button></div>
         </aside>
       </div>
       <section class="analysis" aria-label="Live scenario analysis">
@@ -165,10 +167,7 @@
         </div>
       </section>
       <section id="sentiment" hidden aria-label="Map of simulated community discussions"></section>
-      <footer>
-        <span id="local-status"><b></b> Notes stay on this device</span
-        ><span>7500 Enterprise Drive <i>·</i> Preliminary plan denied June 2026</span>
-      </footer>
+      <span class="sr-only" id="local-status" role="status">Notes stay on this device</span>
     </main>
     <dialog id="dialog" aria-labelledby="dialog-title">
       <div class="dialog-head">

@@ -104,7 +104,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   const dragPane = makePane(map, 'scopeDrag', 500);
   dragPane.style.pointerEvents = '';
 
-  const basemap = createBasemap(map, 'satellite');
+  const basemap = createBasemap(map, 'map');
   const scale = L.control
     .scale({ position: 'bottomleft', maxWidth: 80, metric: false, imperial: true })
     .addTo(map);
@@ -115,7 +115,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   let panMoved = false;
   const placeMarkers = [];
   function positionLabels() {
-    const w = map.getSize().x;
+    const w = map.getSize().x - (window.innerWidth > 700 ? 280 : 0);
     for (const marker of placeMarkers) {
       const x = map.latLngToContainerPoint(marker.getLatLng()).x;
       const room = w < 640 ? 112 : 150;
@@ -454,7 +454,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   }
   function home() {
     map.fitBounds(L.latLngBounds([...site.boundary, ...places.map(p => [p.lat, p.lng]), ...(state.point ? [state.point] : [])]), {
-      paddingTopLeft: [65, 75], paddingBottomRight: [75, 145], maxZoom: 16.75, animate: false
+      paddingTopLeft: window.innerWidth > 700 ? [285, 150] : [40, 210], paddingBottomRight: window.innerWidth > 700 ? [305, 175] : [40, 205], maxZoom: 16.75, animate: false
     });
   }
   function focus(coords, zoom) {
@@ -467,7 +467,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     map.invalidateSize({ pan: false });
     positionLabels();
   }
-  setBase('satellite');
+  setBase('map');
   home();
   const ro = new ResizeObserver(resize);
   ro.observe(element);
@@ -475,7 +475,11 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     render,
     focus,
     home,
-    zoomBy: (d) => stepZoom(map, d),
+    zoomBy: (d) => {
+      const p = state.point && map.latLngToContainerPoint(state.point), size = map.getSize();
+      // Keep a visible facility in place while buttons enlarge its surroundings.
+      stepZoom(map, d, p && p.x > 0 && p.y > 0 && p.x < size.x && p.y < size.y ? p : undefined);
+    },
     setBase,
     resize,
     destroy() {

@@ -6,10 +6,14 @@ export function createSentimentHeat(map) {
   const pane = map.createPane('sentimentHeat');
   pane.style.zIndex = 410;
   pane.style.pointerEvents = 'none';
-  const canvas = L.DomUtil.create('canvas', 'sentiment-heat leaflet-zoom-hide', pane);
+  const canvas = L.DomUtil.create('canvas', 'sentiment-heat', pane);
   canvas.setAttribute('aria-hidden', 'true');
   const buffer = document.createElement('canvas');
-  let rows = [], enabled = true, frame = 0;
+  let rows = [], enabled = true, frame = 0, origin, drawnZoom;
+  function transform() {
+    if (!origin || canvas.hidden) return;
+    L.DomUtil.setTransform(canvas, map.latLngToLayerPoint(origin), map.getZoomScale(map.getZoom(), drawnZoom));
+  }
   function draw() {
     frame = 0;
     canvas.hidden = !enabled || !rows.length;
@@ -49,14 +53,16 @@ export function createSentimentHeat(map) {
     const ratio=Math.min(devicePixelRatio||1,2);
     canvas.width=width*ratio;canvas.height=height*ratio;
     canvas.style.width=width+'px';canvas.style.height=height+'px';
-    L.DomUtil.setPosition(canvas,map.containerPointToLayerPoint([0,0]));
+    origin = map.containerPointToLatLng([0,0]); drawnZoom = map.getZoom();
+    transform();
     const output=canvas.getContext('2d');output.scale(ratio,ratio);output.imageSmoothingEnabled=true;output.drawImage(buffer,0,0,width,height);
   }
   function schedule(){if(!frame)frame=requestAnimationFrame(draw);}
+  map.on('move zoom', transform);
   map.on('moveend zoomend resize',schedule);
   return {
     update(next,on=true){rows=next;enabled=on;schedule();},
     redraw:schedule,
-    destroy(){cancelAnimationFrame(frame);map.off('moveend zoomend resize',schedule);canvas.remove();pane.remove();}
+    destroy(){cancelAnimationFrame(frame);map.off('move zoom',transform);map.off('moveend zoomend resize',schedule);canvas.remove();pane.remove();}
   };
 }

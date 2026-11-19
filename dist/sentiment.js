@@ -29,25 +29,25 @@ function ring(rows) {
 export function createSentiment(el, { onNote, onMarker, onExplore }) {
   const L = window.L;
   el.innerHTML = `
-    <div class="sent-filters">
-      <span class="sample-stamp">Fictional sample</span>
+    <div class="sent-filters"><button class="panel-toggle" data-command="filters" aria-expanded="true" aria-controls="sent-filter-content">Discussion filters<span>⌄</span></button><div id="sent-filter-content">
+      <span class="sample-stamp" title="${provenance}">Fictional sample · not a public survey</span>
       <div class="sent-display" role="group" aria-label="Discussion display"><button data-heat="off" aria-pressed="false">By place</button><button data-heat="on" aria-pressed="true">Sentiment heatmap</button></div>
       <label>Topic <select data-filter="topic">${option(topics, 'All topics')}</select></label>
       <label>Project phase <select data-filter="phase">${option(phases, 'All phases')}</select></label>
       <label>Source <select data-filter="channel">${option(channels, 'All sources')}</select></label>
       <button data-command="reset">Reset filters</button>
-    </div>
+    </div></div>
     <div class="sent-layout">
       <section class="sent-figure">
         <div id="discussion-map" aria-label="Interactive discussion map"></div>
         <div class="map-signature">Allen Park <span>+ Melvindale</span></div>
         <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Light map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
         <div class="sent-note-prompt" hidden>Choose a place to pin your workshop note. <button data-command="cancel">Cancel</button></div>
-        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Rings show each place’s viewpoint mix.</small><small class="heat-key">Heat: leading viewpoint · intensity: sample activity.</small><small class="proposal-key">◇ Proposed site</small></div>
+        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Rings show each place’s viewpoint mix.</small><small class="heat-key">Heat: leading viewpoint · intensity: sample activity.</small><small class="proposal-key">◇ Proposed site</small><small class="sample-note">Fictional discussion sample</small></div>
       </section>
-      <aside class="sent-feed"><div class="feed-heading"></div><div class="feed-rows"></div></aside>
+      <aside class="sent-feed"><button class="panel-toggle" data-command="feed" aria-expanded="true" aria-controls="sent-feed-content">Community discussions<span>⌄</span></button><div id="sent-feed-content"><div class="feed-heading"></div><div class="feed-rows"></div></div></aside>
     </div>
-    <div class="sent-foot"><span>${provenance}</span><span>North-up · Allen Park and Melvindale</span></div>`;
+`;
   const map = L.map(el.querySelector('#discussion-map'), {
     zoomControl: false,
     attributionControl: true,
@@ -104,8 +104,8 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   };
   function fit() {
     map.fitBounds(L.latLngBounds(zones.map((z) => z.center)), {
-      paddingTopLeft: [42, 58],
-      paddingBottomRight: [60, 185],
+      paddingTopLeft: window.innerWidth > 700 ? [280, 160] : [42, 195],
+      paddingBottomRight: window.innerWidth > 700 ? [320, 100] : [50, 135],
       maxZoom: 17,
       animate: false
     });
@@ -125,6 +125,8 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
     selected = id;
     render();
     if (id) {
+      el.querySelector('[data-command=feed]').setAttribute('aria-expanded','true');
+      el.querySelector('#sent-feed-content').hidden=false;
       const zone = zones.find((z) => z.id === id);
       map.panInside(zone.center, { padding: [56, 60] });
     }
@@ -268,6 +270,12 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       render();
       return;
     }
+    if (['filters', 'feed'].includes(btn.dataset.command)) {
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', open);
+      el.querySelector('#' + btn.getAttribute('aria-controls')).hidden = !open;
+      return;
+    }
     switch (btn.dataset.command) {
       case 'all':
         choose('');
@@ -296,6 +304,11 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
         break;
     }
   });
+  if (matchMedia('(max-width:700px)').matches) for (const name of ['filters', 'feed']) {
+    const button=el.querySelector('[data-command='+name+']');
+    button.setAttribute('aria-expanded','false');
+    el.querySelector('#'+button.getAttribute('aria-controls')).hidden=true;
+  }
   render();
   return {
     resize(refit = false) {

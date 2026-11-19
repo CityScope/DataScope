@@ -1,3 +1,4 @@
+import { smoothZoom } from './smooth-zoom.js';
 // Tiles and vector data load directly from their providers with attribution.
 const imagery = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 let enginePromise, stylePromise;
@@ -24,8 +25,9 @@ async function lightStyle() {
   }
   return style;
 }
-export function createBasemap(map, initial='satellite') {
+export function createBasemap(map, initial='map') {
   const L=window.L, element=map.getContainer();
+  smoothZoom(map);
   map.attributionControl?.setPrefix(false);
   const status=document.createElement('div');status.className='basemap-status';status.setAttribute('role','status');status.hidden=true;element.append(status);
   let layer,selected,destroyed=false,generation=0,loadTimer;
@@ -61,7 +63,6 @@ export function createBasemap(map, initial='satellite') {
   void setBase(initial);
   return {setBase,destroy(){destroyed=true;remove();status.remove();}};
 }
-// Quarter-level wheel steps and half-level buttons avoid skipped rapid clicks
-// and keep overhead imagery, vectors and heat aligned throughout each change.
-export const mapInteraction={zoomSnap:0.25,zoomDelta:0.5,wheelPxPerZoomLevel:180,wheelDebounceTime:25,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false};
-export function stepZoom(map,direction){map.stop();map.setZoom(Math.max(map.getMinZoom(),Math.min(map.getMaxZoom(),map.getZoom()+direction*0.5)),{animate:false});}
+// No wheel snapping: the shared controller animates every displayed zoom level.
+export const mapInteraction={zoomSnap:0,zoomDelta:0.5,scrollWheelZoom:false,zoomAnimation:false,fadeAnimation:false,markerZoomAnimation:false};
+export function stepZoom(map,direction,anchor){smoothZoom(map).step(direction,anchor);}
