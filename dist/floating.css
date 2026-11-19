@@ -283,3 +283,34 @@ body[data-workspace='sentiment'] .case-title { display:block; }
 .map-key .stance-key i { width:6px; height:6px; flex:0 0 6px; }
 .map-key>strong { font-size:12px; }
 @media(max-width:700px) { .map-key .stance-key { font-size:9.5px; gap:3px; }.map-key .stance-buttons { gap:2px; } }
+/* Design resources and geographic effects share one compact live readout. */
+.design-assumptions { margin:8px 0 12px; color:var(--muted); font-size:10px; line-height:1.45; }
+.analysis { width:min(880px,calc(100% - 36px)); height:128px; min-height:128px; }
+.analysis .metrics { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.analysis .analysis-metric { padding:0 10px; }
+.analysis .metric-line { display:block; height:43px; margin-top:2px; }
+.analysis .metric-line strong { font-size:23px; white-space:nowrap; }
+.analysis .metric-line .change { display:block; font-size:9px; line-height:12px; }
+.analysis .analysis-metric.energy { --tone:#6d8b80; }
+.analysis .analysis-metric.cooling { --tone:#4d93a3; }
+.analysis .metric-name { font-size:10px; }
+.analysis .metric-name .ico { width:11px; height:11px; }
+.analysis .receiver select { font-size:9px; }
+@media(max-width:700px) {
+ .analysis { height:184px; min-height:184px; width:calc(100% - 20px); grid-template-rows:22px 1fr; }
+ .analysis .metrics { grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px 0; }
+ .analysis .analysis-metric { grid-column:span 2; padding:0 6px; }
+ .analysis .analysis-metric.energy,.analysis .analysis-metric.cooling { grid-column:span 3; }
+ .analysis .analysis-metric.energy { padding-left:0; }.analysis .analysis-metric.cooling { padding-right:0; }
+ .analysis .analysis-metric.sound { border-left:0; padding-left:0; }
+ .analysis .metric-name { font-size:10px; min-height:14px; white-space:nowrap; }
+ .analysis .metric-line { height:34px; margin:0; }
+ .analysis .metric-line strong { font-size:21px; }
+ .analysis .metric-line .change { display:inline; font-size:9px; margin-left:5px; }
+ .analysis .metric-line strong small { font-size:8px; }
+ .analysis .analysis-metric:nth-child(n+3) .metric-name { font-size:9px; }
+ .analysis .analysis-metric:nth-child(n+3) .metric-line .change { display:block; margin-left:0; }
+ .analysis .analysis-metric:nth-child(n+3) .metric-line { height:40px; }
+ #modebar { bottom:268px; }
+ #editor-content { max-height:calc(100dvh - 398px); }
+}

@@ -3,6 +3,7 @@ import { loadEnvironmentalLayers, onEnvironmentChange, environmentalSources, env
 import { evaluateConstraints, nearbyConstraints } from './studio/constraints.js';
 import { site, places, sources } from './geography.js';
 import { createReadouts, methodsHTML } from './studio/readouts.js';
+import { normalizeBearing } from './studio/rotation.js';
 import { createMap } from './map.js';
 import { icon, hydrateIcons } from './icons.js';
 import {
@@ -38,7 +39,7 @@ const ui = {
   receptorId: 'riel'
 };
 const dialog = $('dialog');
-const updateReadouts = createReadouts($('metrics'), $('resource-values'));
+const updateReadouts = createReadouts($('metrics'));
 let timer,
   map,
   studio,
@@ -92,7 +93,6 @@ function renderControls() {
   $('notes').setAttribute('aria-label', 'Session notes (' + state.notes.length + ')');
   document.querySelector('[data-camera="building"]').disabled = noBuild();
   if (noBuild() && ui.camera === 'building') studio?.view('site');
-  $('adjust').disabled = noBuild();
   $('design-choices')
     .querySelectorAll('button')
     .forEach((b) => {
@@ -108,9 +108,9 @@ function renderControls() {
   $('design-detail').textContent = noBuild() ? '' : detail[state.design];
   $('design-caption').textContent = noBuild() ? 'No facility placed' : 'Same computing workload';
 }
-function renderMetrics(point = state.point) {
-  const current = { ...state, point };
-  const result = updateReadouts(current, ui.receptorId);
+function renderMetrics(point = state.point, angle = state.angle) {
+  const current = { ...state, point, angle };
+  updateReadouts(current, ui.receptorId);
   const check = evaluateConstraints(current);
   const warningTitles=[...new Set(check.items.map(i=>i.title))];
   const finding=$('context-finding');
@@ -134,15 +134,8 @@ function renderMetrics(point = state.point) {
   banner.title = hasFinding
     ? check.items.map((item) => item.detail).join(' ')
     : 'Screens mapped railways, roads, river, buildings and land uses, plus environmental overlays that have loaded.';
-  document
-    .querySelector('.resources')
-    .style.setProperty('--electricity', Math.min(100, (result.energyGWh / 200) * 100) + '%');
-  document
-    .querySelector('.resources')
-    .style.setProperty('--water-demand', Math.min(100, ((result.waterMGal || 0) / 3) * 100) + '%');
-  document.querySelector('.resources').dataset.waterUnknown = result.waterMGal === null;
-
 }
+
 function renderDesigns() {
   $('design-choices').innerHTML = Object.entries(designs)
     .map(
@@ -158,21 +151,6 @@ function renderDesigns() {
         '</small></span><i class="radio"></i></button>'
     )
     .join('');
-}
-function adjust() {
-  if (!state.point) return;
-  showDialog(
-    'Position and orientation',
-    '<label class="field">Building rotation <output id="degrees">' +
-      state.angle +
-      '°</output><input type="range" id="angle" min="0" max="355" step="5" value="' +
-      state.angle +
-      '"></label><p class="hint">Move the building in 50 ft steps.</p><div class="nudge-row">' +
-      ['North', 'West', 'East', 'South']
-        .map((d) => '<button data-nudge="' + d + '">' + d + '</button>')
-        .join('') +
-      '</div><div class="dialog-actions"><button data-act="close">Done</button></div>'
-  );
 }
 
 function notesPanel() {
@@ -233,7 +211,6 @@ function drawMap() {
     receptorId: ui.receptorId
   });
   $('modebar').hidden = ui.mode === 'explore';
-  $('move').setAttribute('aria-pressed', ui.mode === 'place');
   if (ui.mode !== 'explore')
     $('modebar').innerHTML =
       '<b>' +
@@ -358,6 +335,14 @@ function focusPoint(point) {
   }
   if (ui.view === 'studio' && !sceneContains(point)) changeView('plan', false);
   map?.focus(point);
+}
+
+function rotateAt(angle) {
+  if (!state.point) return;
+  state.angle = normalizeBearing(angle);
+  state.active = 'custom';
+  store();
+  render();
 }
 
 function placeAt(point) {
@@ -516,7 +501,6 @@ function toggleFull() {
 }
 const actions = {
   'add-note': () => setMode('note'),
-  move: () => setMode('place'),
   'cancel-mode': () => setMode('explore'),
   center: () => {
     if (ui.mode === 'note') addNoteAt(mapCenter);
@@ -538,16 +522,6 @@ function restore(n) {
 
   render();
   if (state.point) focusPoint(state.point);
-}
-function nudge(direction) {
-  if (!state.point) return;
-  const [lat, lng] = state.point,
-    meters = 15.24;
-  const dy = meters / 111320,
-    dx = dy / Math.cos((lat * Math.PI) / 180);
-  const offset = { North: [dy, 0], South: [-dy, 0], West: [0, -dx], East: [0, dx] }[direction];
-  placeAt([lat + offset[0], lng + offset[1]]);
-  focusPoint(state.point);
 }
 document.addEventListener('click', (e) => {
   if (!$('layers-menu').hidden && !e.target.closest('#layers, #layers-menu')) toggleLayerMenu();
@@ -628,14 +602,8 @@ document.addEventListener('click', (e) => {
     restore(state.notes.find((n) => n.id === b.dataset.restore));
     return;
   }
-  if (b.dataset.nudge) {
-    nudge(b.dataset.nudge);
-    return;
-  }
   const top = {
-      full: toggleFull,
-      adjust,
-    move: () => { setMode(ui.mode === 'place' ? 'explore' : 'place'); closeEditorOnSmallScreen(); },
+    full: toggleFull,
     notes: () => showDialog('Session notes', notesPanel()),
     evidence: () => showDialog('Case evidence', evidencePanel()),
     methods: () => showDialog('Model assumptions', methodsHTML()),
@@ -673,19 +641,6 @@ document.addEventListener('change', (e) => {
     renderMetrics();
     drawMap();
     return;
-  }
-  if (t.id === 'angle') {
-    store();
-    render();
-  }
-});
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'angle') {
-    state.angle = Number(e.target.value);
-    state.active = 'custom';
-    $('degrees').textContent = state.angle + '°';
-    drawMap();
-    renderMetrics();
   }
 });
 
@@ -736,6 +691,8 @@ try {
   sceneContains = module.sceneContains;
   studio = module.makeScene($('scene'), {
     onPlace: placeAt,
+    onRotate: rotateAt,
+    onRotatePreview: angle => renderMetrics(state.point, angle),
     onPreview: renderMetrics,
     onNote: addNoteAt,
     onMarker: showNote,

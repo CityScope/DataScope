@@ -1,4 +1,6 @@
 import { environmentalState } from '../environment.js';
+import { dragBearing, normalizeBearing } from './rotation.js';
+import { icon } from '../icons.js';
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/OrbitControls.js';
 import { site, places, river } from '../geography.js';
@@ -321,16 +323,43 @@ function makeRiver() {
   return mesh;
 }
 
+// A scene-space manipulator, separate from the footprint and analytical layers.
+function makeRotationDisc() {
+  const group = new THREE.Group();
+  const ring = (inner, outer, opacity, order) => {
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 96),
+      new THREE.MeshBasicMaterial({color:'#447e70', transparent:true, opacity,
+        depthWrite:false, side:THREE.DoubleSide, toneMapped:false}));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = order;
+    group.add(mesh);
+    return mesh;
+  };
+  ring(.94, 1.06, .08, 30);
+  ring(.996, 1.004, .78, 31);
+  const target = ring(.85, 1.15, 0, 29);
+  const ticks = [];
+  for (let i=0; i<24; i++) {
+    const angle=i*Math.PI/12, inner=i%6===0?.91:.97;
+    ticks.push(Math.sin(angle)*inner,0,-Math.cos(angle)*inner,Math.sin(angle),0,-Math.cos(angle));
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(ticks,3));
+  const marks = new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:'#447e70',transparent:true,opacity:.72,depthWrite:false,toneMapped:false}));
+  marks.renderOrder=32;group.add(marks);
+  return {group,target};
+}
+
 export function makeScene(
   element,
-  { onPlace, onPreview, onNote, onMarker, onCenter, onReady, onError, onView } = {}
+  { onPlace, onPreview, onRotate, onRotatePreview, onNote, onMarker, onCenter, onReady, onError, onView } = {}
 ) {
   const canvas = document.createElement('canvas');
   canvas.className = 'ds-studio-canvas';
   canvas.tabIndex = 0;
   canvas.setAttribute(
     'aria-label',
-    '3D data center Scenario Editor. Drag the building to move it. Drag the terrain to orbit, scroll to zoom, or use arrow keys to move the facility.'
+    '3D data center Scenario Editor. Drag the building to move it, or the rotation disc to turn it. Use the rotation grip’s arrow keys for precise turns. Drag the terrain to orbit, scroll to zoom, or use arrow keys to move the facility.'
   );
   let renderer;
   try {
@@ -394,6 +423,44 @@ export function makeScene(
   let design = 'reference',
     asset = createFacility(design);
   facilityAnchor.add(asset);
+  const rotationDisc = makeRotationDisc();
+  scene.add(rotationDisc.group);
+  const rotationGrip = document.createElement('div');
+  rotationGrip.className = 'ds-rotation-grip';
+  rotationGrip.tabIndex = 0;
+  rotationGrip.setAttribute('role','slider');
+  rotationGrip.setAttribute('aria-label','Facility rotation');
+  rotationGrip.setAttribute('aria-valuemin','0');
+  rotationGrip.setAttribute('aria-valuemax','359');
+  rotationGrip.title = 'Drag the disc to rotate. Arrow keys turn 5°; Shift turns 15°.';
+  rotationGrip.innerHTML = icon('rotate')+'<span class="ds-rotation-value"></span>';
+  overlay.append(rotationGrip);
+  let liveAngle = null, turning = null;
+  const rotationPoint = new THREE.Vector3();
+  function layoutRotation() {
+    const show = facilityAnchor.visible && state.mode !== 'note';
+    rotationDisc.group.visible = show;
+    rotationGrip.hidden = !show;
+    if (!show) return;
+    const angle = liveAngle ?? state.angle ?? 0;
+    const radius = Math.max(56,(camera.top-camera.bottom)/(camera.zoom*lastHeight)*30);
+    rotationDisc.group.position.copy(facilityAnchor.position);
+    rotationDisc.group.position.y = 1.6;
+    rotationDisc.group.scale.setScalar(radius);
+    rotationDisc.group.rotation.y = -THREE.MathUtils.degToRad(angle);
+    rotationDisc.group.updateMatrixWorld(true);
+    // Keep the grip on the near rim so buildings, labels and side panels do
+    // not hide it when the facility turns. The disc itself tracks the bearing.
+    rotationPoint.copy(camera.position).sub(facilityAnchor.position);
+    rotationPoint.y=0;rotationPoint.normalize().multiplyScalar(radius).add(facilityAnchor.position);
+    rotationPoint.y=1.6;rotationPoint.project(camera);
+    const x=(rotationPoint.x+1)*lastWidth/2, y=(1-rotationPoint.y)*lastHeight/2;
+    rotationGrip.hidden=x<16 || x>lastWidth-16 || y<18 || y>lastHeight-30 || rotationPoint.z<-1 || rotationPoint.z>1;
+    rotationGrip.style.left=x+'px';rotationGrip.style.top=y+'px';
+    rotationGrip.setAttribute('aria-valuenow',String(angle));
+    rotationGrip.setAttribute('aria-valuetext',angle+' degrees clockwise from north');
+    rotationGrip.querySelector('span').textContent=angle+'°';
+  }
   const sound = makeSoundField(),
     waterLine = makeRiver();
   const parcel = dashedPath(
@@ -643,6 +710,7 @@ export function makeScene(
     projectionDirty = false;
   }
   function layoutLabels() {
+    layoutRotation();
     layoutEquipment();
     if (facilityAnchor.visible) {
       scratch.copy(facilityAnchor.position);
@@ -744,9 +812,10 @@ export function makeScene(
     );
   }
   function setFacility(point) {
+    const angle = liveAngle ?? state.angle ?? 0;
     context.update(state.layers,activeView === 'district');
     const result = impact.update(
-      { point, angle: state.angle || 0, design: state.design },
+      { point, angle, design: state.design },
       {
         enabled: state.layers?.constraints !== false,
         receptorId: state.receptorId,
@@ -776,12 +845,12 @@ export function makeScene(
     }
     const pos = toLocal(point);
     facilityAnchor.position.copy(pos);
-    facilityAnchor.rotation.y = -THREE.MathUtils.degToRad(state.angle || 0);
+    facilityAnchor.rotation.y = -THREE.MathUtils.degToRad(angle);
     facilityAnchor.visible = within(pos, BOARD);
     facilityTag.where.copy(pos);
     facilityTag.where.y = 21.8;
     const calculation = analyzePlacement(
-      { point, angle: state.angle || 0, design: state.design },
+      { point, angle, design: state.design },
       { receptorId: state.receptorId }
     );
     const source = calculation.sourcePoint;
@@ -955,6 +1024,30 @@ export function makeScene(
     updateRay(e);
     return ray.intersectObject(asset, true).length > 0;
   }
+  function startRotation(e) {
+    const hit=groundPoint(e);
+    if (!hit || !state.point) return false;
+    const center=toLocal(state.point);
+    turning={id:e.pointerId, capture:e.currentTarget, initial:state.angle || 0,
+      start:[hit.x-center.x,hit.z-center.z], center};
+    liveAngle=state.angle || 0;
+    anim=null;controls.enabled=false;press=null;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.stopImmediatePropagation();e.preventDefault();
+    rotationGrip.focus({preventScroll:true});
+    element.classList.add('ds-turning');
+    schedule();return true;
+  }
+  function finishRotation(e, cancelled) {
+    if (!turning || (e.pointerId !== undefined && e.pointerId !== turning.id)) return;
+    const {capture,id,initial}=turning, angle=liveAngle;
+    turning=null;liveAngle=null;controls.enabled=true;
+    element.classList.remove('ds-turning');
+    if (capture.hasPointerCapture(id)) capture.releasePointerCapture(id);
+    if (!cancelled && angle!==initial) onRotate?.(angle);
+    else {setFacility(state.point);onRotatePreview?.(state.angle || 0);}
+    labelsDirty=true;schedule();
+  }
   function finishDrag(e, cancelled) {
     if (!moving || e.pointerId !== moving.id) return;
     const drop = livePoint;
@@ -980,10 +1073,15 @@ export function makeScene(
     schedule();
   }
   function down(e) {
-    if (e.button !== 0 || !e.isPrimary || moving) return;
+    if (e.button !== 0 || !e.isPrimary || moving || turning) return;
+    if (state.mode !== 'note' && state.point && e.currentTarget === rotationGrip) {startRotation(e);return;}
     anim = null;
     press = { id: e.pointerId, x: e.clientX, y: e.clientY };
-    if (state.mode === 'note' || !hitsFacility(e)) return;
+    if (state.mode === 'note') return;
+    if (!hitsFacility(e)) {
+      if (rotationDisc.group.visible && ray.intersectObject(rotationDisc.target).length) startRotation(e);
+      return;
+    }
     const start = groundPoint(e);
     if (!start || !state.point) return;
     moving = { id: e.pointerId, start, original: toLocal(state.point), dragged: false };
@@ -994,6 +1092,16 @@ export function makeScene(
     canvas.focus({ preventScroll: true });
   }
   function move(e) {
+    if (turning) {
+      if (e.pointerId !== turning.id) return;
+      const hit=groundPoint(e);
+      if (!hit) return;
+      const next=dragBearing(turning.initial,turning.start,[hit.x-turning.center.x,hit.z-turning.center.z],e.shiftKey?15:1);
+      if (next!==liveAngle) {
+        liveAngle=next;setFacility(state.point);onRotatePreview?.(next);schedule();
+      }
+      e.stopImmediatePropagation();return;
+    }
     if (!moving) {
       return;
     }
@@ -1012,6 +1120,7 @@ export function makeScene(
     schedule();
   }
   function up(e) {
+    if (turning) {e.stopImmediatePropagation();finishRotation(e,false);return;}
     if (moving) {
       e.stopImmediatePropagation();
       finishDrag(e, false);
@@ -1028,10 +1137,18 @@ export function makeScene(
     else onPlace?.(point);
   }
   function cancel(e) {
+    finishRotation(e,true);
     finishDrag(e, true);
     press = null;
   }
   function keys(e) {
+    if (e.key==='Escape' && turning) {finishRotation(e,true);e.preventDefault();return;}
+    if (e.currentTarget===rotationGrip) {
+      if (!state.point || e.altKey || e.ctrlKey || e.metaKey) return;
+      const direction={ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1}[e.key];
+      if (direction) {e.preventDefault();onRotate?.(normalizeBearing((state.angle || 0)+direction*(e.shiftKey?15:5)));}
+      return;
+    }
     if (!state.point || e.altKey || e.ctrlKey || e.metaKey) return;
     const offset = { ArrowUp: [0, -1], ArrowRight: [1, 0], ArrowDown: [0, 1], ArrowLeft: [-1, 0] }[
       e.key
@@ -1049,6 +1166,8 @@ export function makeScene(
   canvas.addEventListener('pointerup', up, true);
   canvas.addEventListener('pointercancel', cancel, true);
   canvas.addEventListener('keydown', keys);
+  canvas.addEventListener('lostpointercapture', cancel);
+  for (const [name,handler] of [['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel],['keydown',keys]]) rotationGrip.addEventListener(name,handler);
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
     onError?.(new Error('3D graphics context lost'));

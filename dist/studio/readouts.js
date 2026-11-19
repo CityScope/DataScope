@@ -4,6 +4,14 @@ import { icon } from '../icons.js';
 
 export const metricConfig = [
   {
+    key: 'energy', method: 'resources', field: 'energyGWh', name: 'Electricity',
+    icon: 'bolt', unit: 'GWh/yr', factor: 1, min: 0, max: 200, digits: 1, percentDelta: true
+  },
+  {
+    key: 'cooling', method: 'resources', field: 'waterMGal', name: 'Cooling water',
+    icon: 'water', unit: 'M gal/yr', factor: 1, min: 0, max: 3, digits: 1, percentDelta: true
+  },
+  {
     key: 'sound',
     field: 'soundDbA',
     name: 'Equipment sound',
@@ -47,13 +55,13 @@ export const displayNumber = (value, digits = 0) =>
     ? '—'
     : value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const scale = (n, c) => Math.min(100, Math.max(0, ((n - c.min) / (c.max - c.min)) * 100));
-export function createReadouts(container, resourceContainer) {
+export function createReadouts(container) {
   const entries = metricConfig.map((c) => {
     const el = document.createElement('section');
     el.className = 'analysis-metric ' + c.key;
     el.innerHTML =
       '<button class="metric-name" data-method="' +
-      c.key +
+      (c.method || c.key) +
       '">' +
       icon(c.icon) +
       c.name +
@@ -70,7 +78,7 @@ export function createReadouts(container, resourceContainer) {
       sel.value = 'riel';
       label.append(sel);
       el.append(label);
-    } else {
+    } else if (c.caption) {
       const caption = document.createElement('span');
       caption.className = 'metric-caption';
       caption.textContent = c.caption;
@@ -87,36 +95,27 @@ export function createReadouts(container, resourceContainer) {
       base: el.querySelector('.meter b')
     };
   });
-  resourceContainer.innerHTML =
-    '<div class="resource-grid"><div><span>Electricity</span><b id="energy-value"></b> <small>GWh</small></div><div><span>Cooling water</span><b id="water-value"></b> <small id="water-unit">M gal</small></div></div>';
-  const energy = resourceContainer.querySelector('#energy-value'),
-    water = resourceContainer.querySelector('#water-value'),
-    waterUnit = resourceContainer.querySelector('#water-unit');
   return (placement, receptorId) => {
     const result = analyzePlacement(placement, { receptorId });
     for (const item of entries) {
       const { c, value, unit, change, fill, base } = item,
         n = result[c.field],
         diff = result.delta[c.field],
-        rounded = diff == null ? null : Number((diff * c.factor).toFixed(c.digits));
+        rounded = diff == null ? null : c.percentDelta ? Number((100 * diff / (n - diff)).toFixed(1)) : Number((diff * c.factor).toFixed(c.digits));
       value.textContent = displayNumber(n == null ? null : n * c.factor, c.digits);
       unit.hidden = n == null;
       change.textContent =
-        n == null
-          ? c.key === 'water' && result.riverOutOfCoverage ? 'Beyond river coverage' : 'No facility'
+        !placement.point ? 'No facility' : n == null
+          ? c.key === 'water' && result.riverOutOfCoverage ? 'Beyond river coverage' : 'Not modeled'
           : rounded === 0
             ? 'At reference'
-            : (rounded > 0 ? '+' : '−') + displayNumber(Math.abs(rounded), c.digits) + ' ' + c.deltaUnit;
+            : (rounded > 0 ? '+' : '−') + displayNumber(Math.abs(rounded), c.percentDelta && Number.isInteger(rounded) ? 0 : c.digits) + (c.percentDelta ? '%' : ' ' + c.deltaUnit);
       change.classList.toggle('changed', !!rounded);
       change.title = 'Difference from reference design at proposed site';
       fill.style.width = (n == null ? 0 : scale(n * c.factor, c)) + '%';
       base.style.left = diff == null ? '0%' : scale((n - diff) * c.factor, c) + '%';
       base.hidden = diff == null;
     }
-    energy.textContent = displayNumber(result.energyGWh, placement.point ? 1 : 0);
-    water.textContent =
-      result.waterMGal === null ? 'Unmodeled' : displayNumber(result.waterMGal, placement.point ? 1 : 0);
-    waterUnit.hidden = result.waterMGal === null;
     return result;
   };
 }
@@ -136,6 +135,6 @@ export function methodsHTML(key) {
           '</section>'
       )
       .join('') +
-    '<p class="minor">Reference marks and changes compare with the reference design at its starting position on Enterprise Drive. The sound scale spans 20–65 dBA, river clearance 0–1,500 ft and parcel coverage 0–100%. Numbers show the full values. A percentage-point change measures the difference between two percentages.</p>'
+    '<p class="minor">Reference marks and changes compare with the reference design at its starting position on Enterprise Drive. Electricity and cooling-water changes are percentages of the reference design; their annual use depends on the design, not its location. All designs share the same modeled footprint and equipment sound assumption. The sound scale spans 20–65 dBA, river clearance 0–1,500 ft and parcel coverage 0–100%. Numbers show the full values. A percentage-point change measures the difference between two percentages.</p>'
   );
 }

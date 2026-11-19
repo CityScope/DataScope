@@ -206,3 +206,11 @@
     padding: 6px 9px;
   }
 }
+/* The rotation grip follows its 3D disc; it is never a toolbar action. */
+.ds-rotation-grip { position:absolute; z-index:3; width:27px; height:27px; transform:translate(-50%,-50%); display:grid; place-items:center; pointer-events:auto; cursor:grab; touch-action:none; color:#356f60; background:#f8fcf8f5; border:1px solid #7da899; border-radius:50%; box-shadow:0 2px 5px #24483a25; }
+.ds-rotation-grip .ico { width:15px; height:15px; }
+.ds-rotation-value { position:absolute; top:29px; left:50%; transform:translateX(-50%); color:#315c50; background:#f8fcf8eb; border-radius:4px; padding:2px 4px; font:10px/1 Helvetica,sans-serif; white-space:nowrap; }
+.ds-rotation-grip:focus-visible { outline:2px solid #356f60; outline-offset:3px; }
+.ds-turning .ds-rotation-grip,.ds-turning .ds-studio-canvas { cursor:grabbing; }
+.ds-turning .ds-rotation-grip { background:#d6ebe2; border-color:#356f60; }
+.ds-rotation-grip[hidden] { display:none; }
