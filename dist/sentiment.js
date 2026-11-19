@@ -1,9 +1,9 @@
 import { createBasemap, mapInteraction, stepZoom } from './basemaps.js';
 import { createSentimentHeat } from './sentiment-heat.js';
+import { stanceColors as colors } from './sentiment-field.js';
 import { zones, discussions, stances, topics, phases, channels, provenance } from './sentiment-data.js';
 import { site, river } from './geography.js';
 
-const colors = { supportive: '#077968', conditional: '#cc9c32', concerned: '#bd523b' };
 const label = (options, id) => options.find((item) => item.id === id)?.label;
 const zoneName = (id) => zones.find((z) => z.id === id)?.name;
 const option = (items, all) =>
@@ -41,9 +41,9 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       <section class="sent-figure">
         <div id="discussion-map" aria-label="Interactive discussion map"></div>
         <div class="map-signature">Allen Park <span>+ Melvindale</span></div>
-        <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Light map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
-        <div class="sent-note-prompt" hidden>Choose a place to pin your workshop note. <button data-command="cancel">Cancel</button></div>
-        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Rings show each place’s viewpoint mix.</small><small class="heat-key">Heat: leading viewpoint · intensity: sample activity.</small><small class="proposal-key">◇ Proposed site</small><small class="sample-note">Fictional discussion sample</small></div>
+        <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Light map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Reset map" aria-label="Reset discussion map">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
+        <div class="sent-note-prompt" hidden>Choose a place to pin your session note. <button data-command="cancel">Cancel</button></div>
+        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small id="discussion-map-key">Dots: individually mapped remarks.</small><small class="heat-key">Heat: nearby remark density &amp; viewpoint mix.</small><small class="proposal-key">◇ Proposed site</small><small class="sample-note">Fictional discussion sample</small></div>
       </section>
       <aside class="sent-feed"><button class="panel-toggle" data-command="feed" aria-expanded="true" aria-controls="sent-feed-content">Community discussions<span>⌄</span></button><div id="sent-feed-content"><div class="feed-heading"></div><div class="feed-rows"></div></div></aside>
     </div>
@@ -70,8 +70,16 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   }).addTo(map);
   L.marker(site.center, { title: 'Proposed site', alt: 'Proposed site', icon: L.divIcon({ className: 'proposal-map-label', html: '◇', iconSize: [18, 18], iconAnchor: [9, 9] }) }).bindTooltip('Proposed site').addTo(map);
   L.control.scale({ imperial: true, metric: false, position: 'bottomright', maxWidth: 90 }).addTo(map);
-  const groups = L.layerGroup().addTo(map),
+  const groups = L.layerGroup().addTo(map), remarks = L.layerGroup().addTo(map),
     pins = L.layerGroup().addTo(map);
+  const remarkMarkers = new Map();
+  let activeRows = discussions, selectedRemark = '';
+  function detailScale() {
+    const zoom=map.getZoom();
+    el.querySelector('#discussion-map').style.setProperty('--remark-size',Math.max(4,Math.min(9,4+(zoom-15)*1.7))+'px');
+    el.querySelector('#discussion-map').style.setProperty('--remark-opacity',Math.max(.55,Math.min(1,.55+(zoom-14)*.16)));
+  }
+  map.on('zoom',detailScale);
   const filters = { topic: '', phase: '', channel: '', stance: '' };
   let selected = '',
     noteMode = false,
@@ -103,7 +111,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
     return button;
   };
   function fit() {
-    map.fitBounds(L.latLngBounds(zones.map((z) => z.center)), {
+    map.fitBounds(L.latLngBounds(heatMode && activeRows.length ? activeRows.map(r=>r.coords) : zones.map(z=>z.center)), {
       paddingTopLeft: window.innerWidth > 700 ? [280, 160] : [42, 195],
       paddingBottomRight: window.innerWidth > 700 ? [320, 100] : [50, 135],
       maxZoom: 17,
@@ -123,6 +131,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   });
   function choose(id) {
     selected = id;
+    selectedRemark = '';
     render();
     if (id) {
       el.querySelector('[data-command=feed]').setAttribute('aria-expanded','true');
@@ -131,15 +140,61 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       map.panInside(zone.center, { padding: [56, 60] });
     }
   }
+  function chooseRemark(id, locate=false) {
+    const row=activeRows.find(r=>r.id===id);
+    if(!row)return;
+    if(noteMode){setNote(false);onNote(row.coords);return;}
+    selectedRemark=id;selected=row.zoneId;heatMode=true;
+    render();
+    el.querySelector('[data-command=feed]').setAttribute('aria-expanded','true');
+    el.querySelector('#sent-feed-content').hidden=false;
+    el.querySelector('.feed-rows').scrollTop=0;
+    if(locate) {
+      const zoom=Math.max(18,map.getZoom());
+      if(matchMedia('(prefers-reduced-motion:reduce)').matches)map.setView(row.coords,zoom,{animate:false});
+      else map.flyTo(row.coords,zoom,{duration:.65});
+    } else {
+      const wide=window.innerWidth>700,size=map.getSize();
+      map.panInside(row.coords,{paddingTopLeft:[wide?270:32,wide?100:165],paddingBottomRight:[wide?300:32,wide?70:Math.min(size.y*.45+40,size.y-220)]});
+    }
+  }
+  function drawRemarks(rows) {
+    const ids=new Set(rows.map(r=>r.id));
+    for(const [id,entry] of remarkMarkers)if(!ids.has(id)){remarks.removeLayer(entry.marker);remarkMarkers.delete(id);}
+    for(const row of rows) {
+      let entry=remarkMarkers.get(row.id);
+      if(!entry) {
+        const button=document.createElement('button');
+        button.type='button';button.className='remark-dot';button.dataset.remarkId=row.id;
+        button.style.setProperty('--stance',colors[row.stance]);
+        button.setAttribute('aria-label',label(stances,row.stance)+': '+row.title);
+        button.addEventListener('click',e=>{e.stopPropagation();chooseRemark(row.id);});
+        const marker=L.marker(row.coords,{keyboard:false,icon:L.divIcon({className:'remark-marker',html:button,iconSize:[20,20],iconAnchor:[10,10]})}).addTo(remarks);
+        marker.bindTooltip(label(stances,row.stance)+' · '+row.title,{direction:'top',offset:[0,-7],className:'remark-tooltip'});
+        entry={marker,button};remarkMarkers.set(row.id,entry);
+      }
+      entry.button.classList.toggle('selected',row.id===selectedRemark);
+      entry.button.setAttribute('aria-pressed',row.id===selectedRemark);
+      entry.marker.setZIndexOffset(row.id===selectedRemark?1500:0);
+    }
+    if(heatMode && !map.hasLayer(remarks))remarks.addTo(map);
+    if(!heatMode && map.hasLayer(remarks))map.removeLayer(remarks);
+    if(map._loaded)detailScale();
+  }
   function render() {
     const rows = discussions.filter((r) => Object.entries(filters).every(([k, v]) => !v || r[k] === v));
+    activeRows=rows;
+    if (!rows.some(r=>r.id===selectedRemark))selectedRemark='';
     if (!rows.some((r) => r.zoneId === selected)) selected = '';
     const visible = rows.filter((r) => !selected || r.zoneId === selected);
     heat.update(rows, heatMode);
+    drawRemarks(rows);
+    el.dataset.discussionView=heatMode?'heat':'places';
+    el.querySelector('#discussion-map-key').textContent=heatMode?'Dots: individually mapped remarks.':'Rings: viewpoint mix · numbers: remarks.';
     el.querySelector('.heat-key').hidden = !heatMode;
     el.querySelectorAll('[data-heat]').forEach((b) => b.setAttribute('aria-pressed', (b.dataset.heat === 'on') === heatMode));
     groups.clearLayers();
-    for (const zone of zones) {
+    if(!heatMode) for (const zone of zones) {
       const here = rows.filter((r) => r.zoneId === zone.id);
       if (!here.length) continue;
       const marker = L.marker(zone.center, {
@@ -176,7 +231,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       (selected ? zoneName(selected) : 'Across the district') +
       '</h2><div class="feed-sub"><b>' +
       visible.length +
-      ' discussions</b>' +
+      ' mapped remarks</b>' +
       (selected
         ? '<button data-command="all">All places</button><button data-command="explore">Open in editor</button>'
         : '<span>' +
@@ -195,9 +250,13 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
     const ordered = Array.from({ length: levels }, (_, i) =>
       byZone.map((group) => group[i]).filter(Boolean)
     ).flat();
+    if(selectedRemark)ordered.sort((a,b)=>Number(b.id===selectedRemark)-Number(a.id===selectedRemark));
     for (const r of ordered) {
       const article = document.createElement('details');
       article.className = 'thread';
+      article.dataset.remarkId=r.id;
+      article.open=r.id===selectedRemark;
+      article.classList.toggle('selected-remark',r.id===selectedRemark);
       article.style.setProperty('--stance', colors[r.stance]);
       const summary = document.createElement('summary');
       summary.innerHTML =
@@ -237,13 +296,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
           .join('');
       const locate = document.createElement('button');
       locate.textContent = 'Show on map';
-      locate.onclick = () => {
-        map.setView(r.coords, Math.max(17, map.getZoom()));
-        L.popup()
-          .setLatLng(r.coords)
-          .setContent(summary.querySelector('strong').cloneNode(true))
-          .openOn(map);
-      };
+      locate.onclick = () => chooseRemark(r.id,true);
       body.append(locate);
       article.append(body);
       list.append(article);
@@ -263,7 +316,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   el.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
-    if (btn.dataset.heat) { heatMode = btn.dataset.heat === 'on'; render(); return; }
+    if (btn.dataset.heat) { heatMode = btn.dataset.heat === 'on'; selectedRemark='';map.closePopup();render();return; }
     if (btn.dataset.stance) {
       filters.stance = filters.stance === btn.dataset.stance ? '' : btn.dataset.stance;
       map.closePopup();

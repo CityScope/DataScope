@@ -2,7 +2,7 @@
 // expressed in one sample message about a design choice. Replies are kept
 // with their opening message and excluded from the discussion counts.
 export const provenance =
-  'Fictional discussion examples. Pins mark places discussed. Counts describe this sample only.';
+  'Fictional discussion examples with illustrative map pins, not collected participant locations. Each dot represents one opening remark; replies stay in its thread. Counts describe this sample only.';
 
 export const stances = [
   { id: 'supportive', label: 'Supportive' },
