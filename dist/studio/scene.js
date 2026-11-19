@@ -434,6 +434,12 @@ export function makeScene(
       if (o.material) for (const mat of [].concat(o.material)) materialSet.add(mat);
     });
   }
+  // The solid table base is hidden in cropped views. In the district view its
+  // outer faces coincide with BOARD's clipping planes; clipping those faces
+  // causes precision-dependent holes and flicker along the visible table edge.
+  district.userData.plinth.traverse((o) => {
+    if (o.material) for (const mat of [].concat(o.material)) materialSet.delete(mat);
+  });
   const surfaceTop = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const ray = new THREE.Raycaster(),
     pointer = new THREE.Vector2();

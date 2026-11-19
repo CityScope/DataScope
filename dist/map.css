@@ -42,8 +42,12 @@
   --place: #3d6d89;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: max-content;
+  padding: 2px 5px 2px 3px;
+  background: #f8fbf7eb;
+  border: 1px solid #b9cec466;
+  border-radius: 5px;
 }
 .scope-map .scope-place-marker.label-left .scope-place-content {
   flex-direction: row-reverse;
@@ -93,12 +97,23 @@
   color: var(--ink);
   text-shadow: none;
 }
+.scope-map .scope-place-badge {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.scope-map .scope-place-badge svg { width: 12px; height: 12px; }
 .scope-map .scope-place-title {
-  padding: 3px 5px;
-  border-radius: 3px;
-  max-width: 138px;
-  white-space: normal;
-  background: var(--panel);
+  padding: 0;
+  max-width: none;
+  white-space: nowrap;
+  background: transparent;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.2;
 }
 .scope-map .scope-place-content.park .scope-place-title {
   color: var(--ink);
@@ -271,8 +286,8 @@
     margin-bottom: 24px;
   }
   .scope-map .scope-place-title {
-    max-width: 96px;
-    font-size: 11px;
+    max-width: none;
+    font-size: 10px;
   }
   .scope-map .scope-footprint-label {
     font-size: 11px;

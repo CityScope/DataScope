@@ -550,12 +550,9 @@ function nudge(direction) {
   focusPoint(state.point);
 }
 document.addEventListener('click', (e) => {
+  if (!$('layers-menu').hidden && !e.target.closest('#layers, #layers-menu')) toggleLayerMenu();
   const b = e.target.closest('button');
-  if (!b) {
-    if (!$('layers-menu').hidden && !e.target.closest('.layer-wrap')) toggleLayerMenu();
-    return;
-  }
-  if (!$('layers-menu').hidden && !e.target.closest('.layer-wrap')) toggleLayerMenu();
+  if (!b) return;
   if (b.dataset.act) {
     actions[b.dataset.act]?.();
     return;
