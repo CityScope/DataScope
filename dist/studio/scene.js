@@ -14,8 +14,7 @@ const EPS = 0.05;
 const framing = {
   site: { direction: new THREE.Vector3(-0.9, 0.9, 1.12).normalize(), span: 305 },
   building: { direction: new THREE.Vector3(-1.02, 0.84, 0.82).normalize(), span: 89 },
-  district: { direction: new THREE.Vector3(-0.47, 1.14, 1.06).normalize(), span: 1550 },
-  plan: { direction: new THREE.Vector3(0, 1, 0.001).normalize(), span: 530 }
+  district: { direction: new THREE.Vector3(-0.47, 1.14, 1.06).normalize(), span: 1550 }
 };
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const within = (p, box) => p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ;

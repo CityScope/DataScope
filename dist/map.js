@@ -1,3 +1,4 @@
+import { createBasemap } from './basemaps.js';
 import { evaluateConstraints } from './studio/constraints.js';
 import { equipmentSourcePoint } from './studio/analysis.js';
 // The movable outline is an illustrative, single-storey 45,000 ft² rectangle.
@@ -7,10 +8,6 @@ import { isStudyPoint } from './workshop.js';
 
 const L = window.L;
 const METERS_LAT = 111320;
-const TILE_URL =
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-const PUBLIC_PLAN =
-  'https://www.cityofallenpark.org/government/agenda_and_minutes/planning_commission.php';
 const roofLength = 90;
 const roofWidth = (45000 * 0.09290304) / roofLength;
 
@@ -61,123 +58,12 @@ function makePane(map, name, zIndex) {
   return pane;
 }
 
-// A small original orientation diagram interpreted from Fig. 1 of the city's
-// January 2026 site review. It appears underneath live imagery if tiles fail.
-// Figure axes are north-up and are aligned to the generalised parcel envelope.
-// Only the handful of roads and railways visible in the planning figure are drawn.
-function addOrientation(map) {
-  if (!site.boundary || site.boundary.length < 3) return;
-  const bb = L.latLngBounds(site.boundary);
-  const at = ([x, y]) => [
-    bb.getNorth() + ((228 - y) / 249) * (bb.getNorth() - bb.getSouth()),
-    bb.getWest() + ((x - 248) / 277) * (bb.getEast() - bb.getWest())
-  ];
-  const opts = { interactive: false, pane: 'scopeSketch', smoothFactor: 1.2 };
-  labelMarker(map, at([190, 518]), 'Enterprise Dr', 'road-label enterprise-label');
-  labelMarker(map, at([198, 280]), 'I-94', 'interstate-label');
-  labelMarker(map, at([558, 510]), 'O’Connor Ave', 'road-label neighborhood-label');
-  function line(coords, style) {
-    return L.polyline(coords.map(at), { ...opts, ...style }).addTo(map);
-  }
-  const major = [
-    [-85, 452],
-    [41, 379],
-    [177, 299],
-    [301, 207],
-    [430, 90],
-    [533, -36]
-  ];
-  line(major, { color: '#34454a', weight: 12 });
-  line(major, { color: '#718078', weight: 1.2 });
-  const roads = [
-    [
-      [110, 673],
-      [185, 540],
-      [245, 435],
-      [296, 341],
-      [330, 292]
-    ],
-    [
-      [311, 670],
-      [373, 551],
-      [425, 457],
-      [484, 361],
-      [540, 267]
-    ],
-    [
-      [393, 665],
-      [448, 567],
-      [513, 459],
-      [570, 361],
-      [624, 266]
-    ],
-    [
-      [491, 660],
-      [537, 575],
-      [602, 467],
-      [668, 352]
-    ],
-    [
-      [373, 551],
-      [610, 689]
-    ],
-    [
-      [392, 515],
-      [645, 669]
-    ],
-    [
-      [418, 472],
-      [661, 627]
-    ],
-    [
-      [445, 427],
-      [697, 581]
-    ],
-    [
-      [472, 383],
-      [713, 536]
-    ],
-    [
-      [498, 339],
-      [742, 490]
-    ],
-    [
-      [524, 295],
-      [767, 446]
-    ]
-  ];
-  roads.forEach((coords) => line(coords, { color: '#536164', weight: 2.5 }));
-  for (const coords of [
-    [
-      [-30, 423],
-      [183, 348],
-      [400, 267],
-      [595, 200],
-      [764, 132]
-    ],
-    [
-      [267, 673],
-      [391, 463],
-      [486, 306],
-      [560, 189],
-      [624, 77],
-      [674, -20]
-    ]
-  ]) {
-    line(coords, { color: '#47585c', weight: 3 });
-    line(coords, { color: '#88938d', weight: 1, dashArray: '3 7' });
-  }
-}
-
 function labelMarker(map, coords, text, className, anchor = [0, 0]) {
-  const label = makeNode('scope-text-label', text);
-  return L.marker(coords, {
-    pane: 'scopeLabels',
-    interactive: false,
-    keyboard: false,
-    icon: icon('scope-map-label ' + className, label, [1, 1], anchor)
+  return L.marker(coords, { pane: 'scopeLabels', interactive: false, keyboard: false,
+    icon: icon('scope-map-label ' + className, makeNode('scope-text-label', text), [1, 1], anchor)
   }).addTo(map);
 }
+
 function sourcePopup(title, description, url) {
   const body = makeNode('scope-popup', undefined, 'div');
   body.append(makeNode('', title, 'strong'));
@@ -216,53 +102,8 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   makePane(map, 'scopeNotes', 490);
   const dragPane = makePane(map, 'scopeDrag', 500);
   dragPane.style.pointerEvents = '';
-  addOrientation(map);
 
-  const sketchAttribution =
-    'Planning sketch · <a href="' +
-    PUBLIC_PLAN +
-    '" target="_blank" rel="noopener noreferrer">Allen Park</a>';
-  const aerialAttribution =
-    '<a href="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer" target="_blank" rel="noopener noreferrer">Imagery: Esri, Vantor, Earthstar Geographics, and the GIS User Community</a>';
-  let credits = [sketchAttribution];
-  map.attributionControl.addAttribution(sketchAttribution);
-  const loadedTiles = new WeakSet();
-  const tiles = L.tileLayer(TILE_URL, { maxZoom: 20, maxNativeZoom: 19, keepBuffer: 3, noWrap: true });
-  let creditFrame = 0;
-  // A pan can reveal an offline area after the first view loaded successfully.
-  // Determine the visible providers from on-screen tiles, not from session history.
-  function refreshCredits() {
-    if (creditFrame) return;
-    creditFrame = requestAnimationFrame(() => {
-      creditFrame = 0;
-      const box = element.getBoundingClientRect();
-      let imagery = false,
-        sketch = false;
-      for (const tile of tiles.getContainer()?.querySelectorAll('.leaflet-tile') || []) {
-        const r = tile.getBoundingClientRect();
-        if (r.right <= box.left || r.left >= box.right || r.bottom <= box.top || r.top >= box.bottom)
-          continue;
-        if (loadedTiles.has(tile)) imagery = true;
-        else sketch = true;
-      }
-      const next = [];
-      if (imagery) next.push(aerialAttribution);
-      if (!imagery || sketch) next.push(sketchAttribution);
-      for (const source of credits)
-        if (!next.includes(source)) map.attributionControl.removeAttribution(source);
-      for (const source of next)
-        if (!credits.includes(source)) map.attributionControl.addAttribution(source);
-      credits = next;
-      element.classList.toggle('has-aerial', imagery);
-    });
-  }
-  tiles.on('tileload', (e) => {
-    loadedTiles.add(e.tile);
-    refreshCredits();
-  });
-  tiles.on('loading tileerror tileunload load', refreshCredits);
-  map.on('moveend zoomend resize', refreshCredits);
-  tiles.addTo(map);
+  const basemap = createBasemap(map, 'satellite');
   const scale = L.control
     .scale({ position: 'bottomleft', maxWidth: 80, metric: false, imperial: true })
     .addTo(map);
@@ -308,16 +149,16 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     weight: 2,
     fillColor: '#399f99',
     fillOpacity: 0.77
-  }).addTo(roofGroup);
-  const roofStripes = L.polyline([], { ...quiet, color: '#b7fff1', weight: 1, opacity: 0.78 }).addTo(
-    roofGroup
-  );
+  });
+  const roofStripes = L.polyline([], { ...quiet, color: '#b7fff1', weight: 1, opacity: 0.78 });
   function setHandleSize(point, angle) {
     const pxPerM =
       map.options.crs.scale(map.getZoom()) / (40075016.686 * Math.cos((point[0] * Math.PI) / 180));
     const r = (angle * Math.PI) / 180;
     const halfHeight =
       ((Math.abs(roofLength * Math.cos(r)) + Math.abs(roofWidth * Math.sin(r))) * pxPerM) / 2;
+    node.style.setProperty('--plan-width', 48 * pxPerM + 'px');
+    node.style.setProperty('--plan-height', 92 * pxPerM + 'px');
     node.style.setProperty('--roof-width', Math.max(34, roofWidth * pxPerM) + 'px');
     node.style.setProperty('--roof-length', Math.max(36, roofLength * pxPerM) + 'px');
     node.style.setProperty('--roof-angle', angle + 'deg');
@@ -368,7 +209,11 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
   }
 
   const node = makeNode('scope-drag-handle');
-  node.append(symbol('move'), makeNode('scope-footprint-label', 'Data center'));
+  const sprite = document.createElement('img');
+  sprite.className = 'plan-building';
+  sprite.alt = 'Overhead data center design';
+  sprite.draggable = false;
+  node.append(sprite, symbol('move'), makeNode('scope-footprint-label', 'Data center'));
   const handle = L.marker(site.center, {
     pane: 'scopeDrag',
     draggable: true,
@@ -545,6 +390,8 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     state = next;
     element.dataset.mode = state.mode;
     const layers = state.layers || {};
+    const image = './assets/plan-' + (state.design || 'reference') + '.webp';
+    if (sprite.getAttribute('src') !== image) sprite.src = image;
     visible(parcelGroup, layers.site !== false);
     visible(waterGroup, layers.river !== false);
     visible(placesGroup, layers.places !== false);
@@ -561,31 +408,19 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
     }
   }
   function home() {
-    const rect = map.getSize();
-    if (rect.x < 120 || rect.y < 140) {
-      map.setView(site.center, 15.75, { animate: false });
-      return;
-    }
-    const extent = L.latLngBounds([site.center, ...(site.boundary || [])]);
-    for (const place of places) extent.extend([place.lat, place.lng]);
-    map.fitBounds(extent, {
-      paddingTopLeft: [rect.x < 520 ? 20 : 40, 70],
-      paddingBottomRight: [Math.min(130, rect.x * 0.23), Math.min(58, rect.y * 0.13)],
-      maxZoom: 16.25,
-      animate: false
-    });
+    map.setView(state.point || site.center, 17.5, { animate: false });
   }
   function focus(coords, zoom) {
     map.setView(coords, zoom ?? map.getZoom(), { animate: false });
   }
   function setBase(name) {
-    element.dataset.base = name === 'satellite' ? 'satellite' : 'night';
+    basemap.setBase(name);
   }
   function resize() {
     map.invalidateSize({ pan: false });
     positionLabels();
   }
-  setBase('night');
+  setBase('satellite');
   home();
   const ro = new ResizeObserver(resize);
   ro.observe(element);
@@ -600,7 +435,7 @@ export function createMap(element, { onPlace, onNote, onMarker, onPreview, onMov
       ro.disconnect();
       cancelAnimationFrame(pending);
       map.remove();
-      cancelAnimationFrame(creditFrame);
+      basemap.destroy();
     }
   };
 }

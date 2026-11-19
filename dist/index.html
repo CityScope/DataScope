@@ -40,8 +40,6 @@
       </nav>
       <div class="top-actions">
         <button id="notes"><i data-icon="note"></i><span>Notes</span><b id="count">0</b></button
-        ><button id="files" class="icon-btn" aria-label="Workshop files" title="Workshop files">
-          <i data-icon="share"></i></button
         ><button id="full" class="icon-btn" aria-label="Enter full screen" title="Full screen">
           <i data-icon="expand"></i></button
         ><button id="add-note" class="primary"><i data-icon="pinplus"></i>Add note</button>
@@ -66,20 +64,20 @@
       <div class="workbench">
         <section class="stage" id="stage" aria-label="Interactive Allen Park model">
           <div id="scene" aria-label="Three-dimensional neighborhood and movable data center"></div>
-          <div id="map" hidden aria-label="Interactive aerial map of Allen Park"></div>
+          <div id="map" hidden aria-label="North-up satellite plan of Allen Park"></div>
           <div id="loading"><i></i><span>Preparing neighborhood model…</span></div>
           <div class="stage-top">
             <div class="cam-modes" role="group" aria-label="Camera view">
-              <button data-camera="site" aria-pressed="true">Site</button
-              ><button data-camera="building" aria-pressed="false">Inspect design</button
+              <button data-camera="building" aria-pressed="false">Inspect design</button
+              ><button data-camera="site" aria-pressed="true">Site</button
               ><button data-camera="district" aria-pressed="false">District</button
               ><button data-camera="plan" aria-pressed="false">Plan</button>
             </div>
             <label class="aerial-modes" hidden
               ><i data-icon="terrain"></i
-              ><select id="base" aria-label="Aerial imagery style">
-                <option value="night">Night aerial</option>
+              ><select id="base" aria-label="Plan basemap">
                 <option value="satellite">Satellite</option>
+                <option value="map">Street map</option>
               </select></label
             >
             <div class="layer-wrap">
@@ -162,7 +160,7 @@
       </section>
       <section id="sentiment" hidden aria-label="Map of simulated community discussions"></section>
       <footer>
-        <span id="local-status"><b></b> Local workshop</span
+        <span id="local-status"><b></b> Notes stay on this device</span
         ><span>7500 Enterprise Drive <i>·</i> Preliminary plan denied June 2026</span>
       </footer>
     </main>

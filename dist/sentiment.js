@@ -1,13 +1,11 @@
+import { createBasemap } from './basemaps.js';
+import { createSentimentHeat } from './sentiment-heat.js';
 import { zones, discussions, stances, topics, phases, channels, provenance } from './sentiment-data.js';
 import { site, river } from './geography.js';
 
 const colors = { supportive: '#077968', conditional: '#cc9c32', concerned: '#bd523b' };
 const label = (options, id) => options.find((item) => item.id === id)?.label;
 const zoneName = (id) => zones.find((z) => z.id === id)?.name;
-const northMeters = 111320,
-  eastMeters = northMeters * Math.cos((site.center[0] * Math.PI) / 180);
-const corner = (x, z) => [site.center[0] - z / northMeters, site.center[1] + x / eastMeters];
-const bounds = [corner(-780, 650), corner(1020, -850)];
 const option = (items, all) =>
   '<option value="">' +
   all +
@@ -33,6 +31,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   el.innerHTML = `
     <div class="sent-filters">
       <span class="sample-stamp">Fictional sample</span>
+      <div class="sent-display" role="group" aria-label="Discussion display"><button data-heat="off" aria-pressed="false">By place</button><button data-heat="on" aria-pressed="true">Sentiment heatmap</button></div>
       <label>Topic <select data-filter="topic">${option(topics, 'All topics')}</select></label>
       <label>Project phase <select data-filter="phase">${option(phases, 'All phases')}</select></label>
       <label>Source <select data-filter="channel">${option(channels, 'All sources')}</select></label>
@@ -42,23 +41,24 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       <section class="sent-figure">
         <div id="discussion-map" aria-label="Interactive discussion map"></div>
         <div class="map-signature">Allen Park <span>+ Melvindale</span></div>
-        <div class="sent-map-tools"><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
+        <div class="sent-map-tools"><select id="sent-base" aria-label="Discussion basemap"><option value="map">Street map</option><option value="satellite">Satellite</option></select><button data-command="fit" title="Show all places" aria-label="Show all places">⌖</button><button data-command="in" aria-label="Zoom in on discussions">+</button><button data-command="out" aria-label="Zoom out from discussions">−</button></div>
         <div class="sent-note-prompt" hidden>Choose a place to pin your workshop note. <button data-command="cancel">Cancel</button></div>
-        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Number inside each ring counts sample discussions.</small></div>
+        <div class="map-key"><strong>Viewpoints</strong><div class="stance-buttons"></div><small>Rings show each place’s viewpoint mix.</small><small class="heat-key">Heat: leading viewpoint · intensity: sample activity.</small><small class="proposal-key">◇ Proposed site</small></div>
       </section>
       <aside class="sent-feed"><div class="feed-heading"></div><div class="feed-rows"></div></aside>
     </div>
-    <div class="sent-foot"><span>${provenance}</span><span>Generalized district plan · CityScope</span></div>`;
+    <div class="sent-foot"><span>${provenance}</span><span>North-up · Allen Park and Melvindale</span></div>`;
   const map = L.map(el.querySelector('#discussion-map'), {
     zoomControl: false,
-    attributionControl: false,
+    attributionControl: true,
     zoomSnap: 0.1,
-    minZoom: 14,
+    minZoom: 11,
     maxZoom: 19,
-    maxBounds: L.latLngBounds(bounds).pad(0.45),
     maxBoundsViscosity: 0.8
   });
-  L.imageOverlay('./assets/district-plan.webp', bounds, { opacity: 0.9, interactive: false }).addTo(map);
+  const basemap = createBasemap(map, 'map');
+  const heat = createSentimentHeat(map);
+  let heatMode = true;
   L.polyline(river, { weight: 2, color: '#347a87', opacity: 0.65, interactive: false }).addTo(map);
   L.polygon(site.boundary, {
     color: '#497f6d',
@@ -67,7 +67,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
     fillOpacity: 0.07,
     interactive: false
   }).addTo(map);
-  L.marker(site.center, { interactive: false, icon: L.divIcon({ className: 'proposal-map-label', html: 'Proposed site', iconSize: [77, 20], iconAnchor: [39, -26] }) }).addTo(map);
+  L.marker(site.center, { title: 'Proposed site', alt: 'Proposed site', icon: L.divIcon({ className: 'proposal-map-label', html: '◇', iconSize: [18, 18], iconAnchor: [9, 9] }) }).bindTooltip('Proposed site').addTo(map);
   L.control.scale({ imperial: true, metric: false, position: 'bottomright', maxWidth: 90 }).addTo(map);
   const groups = L.layerGroup().addTo(map),
     pins = L.layerGroup().addTo(map);
@@ -104,7 +104,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   function fit() {
     map.fitBounds(L.latLngBounds(zones.map((z) => z.center)), {
       paddingTopLeft: [42, 58],
-      paddingBottomRight: [60, 150],
+      paddingBottomRight: [60, 185],
       maxZoom: 17,
       animate: false
     });
@@ -132,6 +132,9 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
     const rows = discussions.filter((r) => Object.entries(filters).every(([k, v]) => !v || r[k] === v));
     if (!rows.some((r) => r.zoneId === selected)) selected = '';
     const visible = rows.filter((r) => !selected || r.zoneId === selected);
+    heat.update(rows, heatMode);
+    el.querySelector('.heat-key').hidden = !heatMode;
+    el.querySelectorAll('[data-heat]').forEach((b) => b.setAttribute('aria-pressed', (b.dataset.heat === 'on') === heatMode));
     groups.clearLayers();
     for (const zone of zones) {
       const here = rows.filter((r) => r.zoneId === zone.id);
@@ -170,13 +173,18 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       (selected ? zoneName(selected) : 'Across the district') +
       '</h2><div class="feed-sub"><b>' +
       visible.length +
-      ' threads</b>' +
+      ' discussions</b>' +
       (selected
         ? '<button data-command="all">All places</button><button data-command="explore">View on table</button>'
         : '<span>' +
           zones.filter((z) => rows.some((r) => r.zoneId === z.id)).length +
           ' places</span>') +
       '</div>';
+    const values = counts(visible);
+    const breakdown = document.createElement('div');
+    breakdown.className = 'sent-breakdown';
+    breakdown.innerHTML = '<div class="sent-stack" aria-hidden="true">' + values.map((n,i)=>'<i style="width:'+ (visible.length ? n/visible.length*100 : 0) +'%;background:'+colors[stances[i].id]+'"></i>').join('') + '</div><div class="sent-totals">' + stances.map((stance,i)=>'<button data-stance="'+stance.id+'" aria-pressed="'+(filters.stance===stance.id)+'"><b style="color:'+colors[stance.id]+'">'+values[i]+'</b><span>'+stance.label+'</span></button>').join('') + '</div>';
+    heading.append(breakdown);
     const list = el.querySelector('.feed-rows');
     list.replaceChildren();
     const byZone = zones.map((z) => visible.filter((row) => row.zoneId === z.id));
@@ -241,6 +249,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
       list.innerHTML = '<p class="empty-result">No sample threads match these filters.</p>';
   }
   el.addEventListener('change', (e) => {
+    if (e.target.id === 'sent-base') { basemap.setBase(e.target.value); return; }
     const k = e.target.dataset.filter;
     if (k) {
       filters[k] = e.target.value;
@@ -251,6 +260,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   el.addEventListener('click', (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
+    if (btn.dataset.heat) { heatMode = btn.dataset.heat === 'on'; render(); return; }
     if (btn.dataset.stance) {
       filters.stance = filters.stance === btn.dataset.stance ? '' : btn.dataset.stance;
       map.closePopup();
@@ -278,7 +288,7 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
         break;
       case 'reset':
         Object.keys(filters).forEach((k) => (filters[k] = ''));
-        el.querySelectorAll('select').forEach((s) => (s.value = ''));
+        el.querySelectorAll('[data-filter]').forEach((s) => (s.value = ''));
         map.closePopup();
         choose('');
         fit();
@@ -287,9 +297,10 @@ export function createSentiment(el, { onNote, onMarker, onExplore }) {
   });
   render();
   return {
-    resize() {
+    resize(refit = false) {
       map.invalidateSize();
-      if (first) {
+      heat.redraw();
+      if (first || refit) {
         fit();
         first = false;
       }

@@ -231,7 +231,7 @@ export function saveWorkspace(state, { replace = false } = {}) {
     lastLocalState = local;
     return true;
   } catch {
-    // Callers can keep working in memory and offer an export when the browser cannot save.
+    // Callers keep temporary in-memory notes and display that persistent browser storage is unavailable.
     return false;
   }
 }

@@ -8,8 +8,6 @@ import { icon, hydrateIcons } from './icons.js';
 import {
   loadWorkspace,
   saveWorkspace,
-  parseWorkshop,
-  serializeWorkshop,
   isStudyPoint,
   WORKSHOP_LIMITS,
   setbackOption
@@ -34,6 +32,7 @@ const ui = {
   camera: 'site',
   mode: 'explore',
   layers: { places: true, site: true, river: true, notes: true, sound: true, constraints: true },
+  planLayers: { places: false, site: false, river: false, notes: true, sound: false, constraints: true },
   selectedNote: null,
   receptorId: 'riel'
 };
@@ -48,8 +47,7 @@ let timer,
   sceneContains = () => true,
   unavailable = false,
   previousCustom = null,
-  mapCenter = site.center,
-  imported = null;
+  mapCenter = site.center;
 const noBuild = () => state.active === 'none';
 
 function scenarioName(which = state.active) {
@@ -69,7 +67,7 @@ function store(replace = false) {
   const sessionSaved = saveWorkspace(state, { replace });
   $('local-status').innerHTML = sessionSaved
     ? '<b></b> Saved on this device'
-    : 'In memory · export to keep';
+    : 'Browser storage unavailable · notes are temporary';
 }
 function toast(message) {
   clearTimeout(timer);
@@ -78,34 +76,6 @@ function toast(message) {
   timer = setTimeout(() => {
     $('toast').hidden = true;
   }, 3600);
-}
-function readLink() {
-  const q = new URLSearchParams(location.hash.slice(1));
-  if (q.get('view') !== 'placement') return false;
-  if (q.get('site') === 'none') {
-    Object.assign(state, { active: 'none', point: null, angle: 0, design: 'reference' });
-    return true;
-  }
-  if (!q.has('lat') || !q.has('lng')) return false;
-  const point = [Number(q.get('lat')), Number(q.get('lng'))],
-    angle = Number(q.get('angle') || 0),
-    design = q.get('design') || 'reference';
-  if (!isStudyPoint(point) || !Number.isFinite(angle) || !Object.hasOwn(designs, design)) return false;
-  Object.assign(state, { active: 'custom', point, angle: ((angle % 360) + 360) % 360, design });
-  return true;
-}
-function addressLink() {
-  const u = new URL(location.href);
-  const q = new URLSearchParams({ view: 'placement' });
-  if (noBuild()) q.set('site', 'none');
-  else {
-    q.set('lat', state.point[0].toFixed(6));
-    q.set('lng', state.point[1].toFixed(6));
-    q.set('angle', state.angle);
-    q.set('design', state.design);
-  }
-  u.hash = q.toString();
-  return u.href;
 }
 function renderControls() {
   const opts = [
@@ -248,9 +218,7 @@ function notesPanel() {
       '<div class="empty">' +
         icon('note') +
         '<h3>No notes yet</h3><p class="hint">Choose a street, park or other place to leave your first question.</p></div>') +
-    ('<p class="minor">Notes stay in this browser. Use a workshop file to exchange them with other participants.</p><button data-act="files">' +
-      icon('share') +
-      'Workshop files</button>')
+    '<p class="minor">Notes are saved only in this browser on this device. They stay here after you refresh or reopen the site.</p>'
   );
 }
 const cityRecords =
@@ -278,7 +246,7 @@ function drawMap() {
   map?.render({
     ...state,
     mode: ui.mode,
-    layers: ui.layers,
+    layers: ui.view === 'plan' ? ui.planLayers : ui.layers,
     selectedNote: ui.selectedNote,
     lens: ['sound', 'water', 'parcel'][question],
     receptorId: ui.receptorId
@@ -323,9 +291,12 @@ function viewControls() {
   document.querySelector('.analysis').hidden = listening;
   document.querySelector('.case-actions').hidden = listening;
   $('sentiment').hidden = !listening;
-  document.querySelector('.cam-modes').hidden = ui.view !== 'studio';
-  document.querySelector('.aerial-modes').hidden = ui.view !== 'aerial';
-  $('map').hidden = ui.view !== 'aerial';
+  document.querySelector('.cam-modes').hidden = listening;
+  document.querySelector('.gesture-hint').textContent = ui.view === 'plan'
+    ? 'Drag the building to move it · Drag the map to pan'
+    : 'Drag the building to move it · Drag the ground to orbit';
+  document.querySelector('.aerial-modes').hidden = ui.view !== 'plan';
+  $('map').hidden = ui.view !== 'plan';
   $('scene').hidden = ui.view !== 'studio';
   $('question-card').hidden = ui.view !== 'studio';
 }
@@ -343,7 +314,7 @@ function aerialMap() {
     onMarker: showNote,
     onPreview: renderMetrics,
     onMoveEnd: (c) => {
-      if (ui.view === 'aerial') mapCenter = c;
+      if (ui.view === 'plan') mapCenter = c;
     }
   }));
 }
@@ -376,12 +347,12 @@ function changeView(view, notify = true) {
   }
   sentiment?.setNote(false);
   if (view === 'studio' && (!studio || unavailable || (state.point && !sceneContains(state.point))))
-    view = 'aerial';
+    view = 'plan';
   const changed = view !== ui.view;
   ui.view = view;
   ui.mode = 'explore';
   viewControls();
-  if (view === 'aerial') $('loading').hidden = true;
+  if (view === 'plan') { $('loading').hidden = true; setCamera('plan'); }
   map = view === 'studio' ? studio : aerialMap();
   map?.resize();
   drawMap();
@@ -398,7 +369,7 @@ function focusPoint(point) {
     sentiment?.focus(point);
     return;
   }
-  if (ui.view === 'studio' && !sceneContains(point)) changeView('aerial', false);
+  if (ui.view === 'studio' && !sceneContains(point)) changeView('plan', false);
   map?.focus(point);
 }
 
@@ -446,7 +417,6 @@ function showDialog(title, html, large = false) {
 }
 function closeDialog() {
   dialog.close();
-  imported = null;
 }
 function addNoteAt(point) {
   if (!isStudyPoint(point)) {
@@ -602,90 +572,6 @@ function compare() {
   );
 }
 
-function fileBtn(action, glyph, title, desc) {
-  return (
-    '<button class="filechoice" data-act="' +
-    action +
-    '">' +
-    icon(glyph) +
-    '<span><b>' +
-    title +
-    '</b><small>' +
-    desc +
-    '</small></span></button>'
-  );
-}
-function files() {
-  showDialog(
-    'Workshop files',
-    '<p class="hint">Work on this device or exchange a snapshot with other participants.</p>' +
-      fileBtn(
-        'link',
-        'link',
-        'Copy placement link',
-        'Share this location, orientation and design only.'
-      ) +
-      fileBtn(
-        'export',
-        'download',
-        'Export workshop',
-        'Download all saved options and community notes.'
-      ) +
-      fileBtn(
-        'import',
-        'folder',
-        'Open workshop file',
-        'Preview a workshop before replacing this one.'
-      ) +
-      '<input id="import-input" type="file" accept=".json,application/json" hidden><p id="file-error" class="error" role="status"></p>'
-  );
-  $('import-input').onchange = async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    try {
-      if (f.size > 6000000) throw Error('Choose a workshop file smaller than 6 MB.');
-      imported = parseWorkshop(await f.text());
-      showDialog(
-        'Open this workshop?',
-        '<p class="hint"><strong>' +
-          escapeHTML(f.name) +
-          '</strong> contains ' +
-          imported.scenarios.length +
-          ' saved options and ' +
-          imported.notes.length +
-          ' notes. Opening it replaces the current workshop on this device.</p><div class="dialog-actions"><button data-act="files">Cancel</button><button class="primary" data-act="confirm-import">Open workshop</button></div>'
-      );
-    } catch (err) {
-      $('file-error').textContent = err.message;
-    }
-  };
-}
-function download() {
-  const a = document.createElement('a'),
-    blob = new Blob([serializeWorkshop(state)], { type: 'application/json' });
-  a.href = URL.createObjectURL(blob);
-  a.download = 'Allen-Park-' + new Date().toISOString().slice(0, 10) + '.workshop.json';
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast('Workshop exported.');
-}
-async function copyLink() {
-  const url = addressLink();
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('Placement link copied.');
-    closeDialog();
-  } catch {
-    showDialog(
-      'Copy placement link',
-      '<label class="field">Placement link<input id="share-url" readonly></label><p class="minor">This preview link opens on devices that can reach the same site address.</p>'
-    );
-    $('share-url').value = url;
-    $('share-url').select();
-  }
-}
 function toggleLayerMenu() {
   const menu = $('layers-menu'),
     opening = menu.hidden;
@@ -698,14 +584,14 @@ function toggleLayerMenu() {
       site: 'Proposed parcel',
       river: 'Ecorse River',
       places: 'Community places',
-      notes: 'Workshop notes'
+      notes: 'Community notes'
     })
       .map(
         ([k, label]) =>
           '<label><input type="checkbox" data-layer="' +
           k +
           '" ' +
-          (ui.layers[k] ? 'checked' : '') +
+          ((ui.view === 'plan' ? ui.planLayers : ui.layers)[k] ? 'checked' : '') +
           '>' +
           label +
           '</label>'
@@ -723,29 +609,12 @@ const actions = {
   'add-note': () => setMode('note'),
   move: () => setMode('place'),
   save: saveOption,
-  files,
   'cancel-mode': () => setMode('explore'),
   center: () => {
     if (ui.mode === 'note') addNoteAt(mapCenter);
     else if (ui.mode === 'place') placeAt(mapCenter);
   },
-  close: closeDialog,
-  link: copyLink,
-  export: download,
-  import: () => $('import-input').click(),
-  'confirm-import': () => {
-    if (!imported) return;
-    Object.assign(state, imported);
-    previousCustom = null;
-    ui.mode = 'explore';
-    ui.selectedNote = null;
-    store(true);
-    closeDialog();
-    render();
-    if (state.point) focusPoint(state.point);
-    else map?.home();
-    toast('Workshop opened.');
-  }
+  close: closeDialog
 };
 function restore(n) {
   const attached = n?.placement;
@@ -790,7 +659,7 @@ document.addEventListener('click', (e) => {
   if (b.id === 'prev-question' || b.id === 'next-question') {
     question = (question + (b.id === 'next-question' ? 1 : 2)) % 3;
     drawMap();
-    studio?.view(['site', 'district', 'plan'][question]);
+    studio?.view(['site', 'district', 'district'][question]);
     renderMetrics();
     return;
   }
@@ -825,7 +694,13 @@ document.addEventListener('click', (e) => {
     return;
   }
   if (b.dataset.camera) {
-    studio?.view(b.dataset.camera);
+    if (b.dataset.camera === 'plan') {
+      changeView('plan');
+      map?.home();
+    } else {
+      changeView('studio');
+      if (ui.view === 'studio') studio?.view(b.dataset.camera);
+    }
     return;
   }
   if (b.dataset.design) {
@@ -853,8 +728,7 @@ document.addEventListener('click', (e) => {
     return;
   }
   const top = {
-    files,
-    full: toggleFull,
+      full: toggleFull,
     compare,
     save: saveOption,
     adjust,
@@ -874,7 +748,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.layer) {
-    ui.layers[t.dataset.layer] = t.checked;
+    (ui.view === 'plan' ? ui.planLayers : ui.layers)[t.dataset.layer] = t.checked;
     drawMap();
     renderMetrics();
     return;
@@ -922,26 +796,23 @@ document.addEventListener('fullscreenchange', () => {
   );
   map?.resize();
 });
-matchMedia('(max-width:690px)').addEventListener('change', () => map?.resize());
-dialog.addEventListener('close', () => {
-  imported = null;
+matchMedia('(max-width:700px)').addEventListener('change', () => {
+  map?.resize();
+  sentiment?.resize(true);
 });
 window.addEventListener('storage', (e) => {
   if (dialog.open || ui.mode !== 'explore' || !e.key?.startsWith('datascope:workshop:')) return;
   Object.assign(state, loadWorkspace(site.center));
-  if (ui.view === 'studio' && state.point && !sceneContains(state.point)) changeView('aerial', false);
+  if (ui.view === 'studio' && state.point && !sceneContains(state.point)) changeView('plan', false);
   render();
 });
 hydrateIcons();
 renderDesigns();
-const linked = readLink();
-if (location.hash.startsWith('#view=placement'))
-  history.replaceState(null, '', location.pathname + location.search);
 function fallback() {
   if (unavailable) return;
   unavailable = true;
   $('loading').hidden = true;
-  if (ui.view !== 'sentiment') changeView('aerial', false);
+  if (ui.view !== 'sentiment') changeView('plan', false);
   if (ui.view !== 'sentiment')
     toast('Using the plan view for this browser. Drag the footprint to test a placement.');
 }
@@ -964,26 +835,10 @@ try {
     onError: fallback
   });
   if (!unavailable && ui.view !== 'sentiment')
-    changeView(state.point && !sceneContains(state.point) ? 'aerial' : ui.view, false);
+    changeView(state.point && !sceneContains(state.point) ? 'plan' : ui.view, false);
 } catch (error) {
   console.error('DataScope 3D', error);
   fallback();
 }
-if (new URLSearchParams(location.search).get('view') === 'sentiment' && !linked) changeView('sentiment');
-if (linked) {
-  store();
-  toast('Shared placement opened.');
-}
+if (new URLSearchParams(location.search).get('view') === 'sentiment') changeView('sentiment');
 if (state.point && state.active !== 'proposal' && ui.view !== 'sentiment') focusPoint(state.point);
-
-window.addEventListener('hashchange', () => {
-  if (!readLink()) return;
-  history.replaceState(null, '', location.pathname + location.search);
-  ui.mode = 'explore';
-  ui.selectedNote = null;
-  store();
-  render();
-  if (state.point) focusPoint(state.point);
-  else map?.home();
-  toast('Shared placement opened.');
-});
