@@ -1,9 +1,50 @@
 import { site } from './geography.js';
 
 export const STUDY_BOUNDS = [
-  [42.16, -83.3],
-  [42.36, -83.11]
+  [30.48, -96.42],
+  [30.72, -96.14]
 ];
+
+export const presetScenarios = {
+  conventional: {
+    name: 'Conventional baseline',
+    point: [...site.center],
+    angle: 0,
+    integration: 'd1',
+    cooling: 't1',
+    energy: 'e1',
+    benefits: []
+  },
+  environmental: {
+    name: 'Environmentally optimized',
+    point: [30.5701, -96.2611],
+    angle: 180,
+    integration: 'd2',
+    cooling: 't3',
+    energy: 'e2',
+    benefits: ['b3']
+  },
+  energy: {
+    name: 'Energy-integrated',
+    point: [30.5698, -96.2615],
+    angle: 150,
+    integration: 'd3',
+    cooling: 't4',
+    energy: 'e4',
+    benefits: ['b2', 'b4']
+  },
+  community: {
+    name: 'Community-integrated',
+    point: [30.571, -96.2616],
+    angle: 180,
+    integration: 'd4',
+    cooling: 't2',
+    energy: 'e2',
+    benefits: ['b1', 'b3', 'b4']
+  }
+};
+
+export const setbackOption = presetScenarios.environmental;
 
 export const WORKSHOP_LIMITS = {
   scenarios: 60,
@@ -12,8 +53,12 @@ export const WORKSHOP_LIMITS = {
   note: 1200
 };
 
-const standardChoices = new Set(['proposal', 'custom', 'none']);
-const designOptions = new Set(['reference', 'efficient', 'dry']);
+const standardChoices = new Set(['conventional', 'environmental', 'energy', 'community', 'custom', 'none']);
+const integrationOptions = new Set(['d1', 'd2', 'd3', 'd4']);
+const coolingOptions = new Set(['t1', 't2', 't3', 't4']);
+const energyOptions = new Set(['e1', 'e2', 'e3', 'e4']);
+const benefitOptions = new Set(['b1', 'b2', 'b3', 'b4']);
+const legacyCoolingMap = { reference: 't1', efficient: 't3', dry: 't2' };
 const earthRadius = 6371008.8;
 
 export function isStudyPoint(point) {
@@ -34,7 +79,7 @@ export function distanceMeters(a, b) {
 
 // Places are public reference points. Distances describe proximity to those points.
 export function measure(point, places) {
-  const nearest = { school: null, park: null, housing: null };
+  const nearest = { school: null, park: null, housing: null, senior: null, medical: null };
   if (!isStudyPoint(point)) return nearest;
   for (const place of places) {
     if (!Object.hasOwn(nearest, place.type) || !isStudyPoint([place.lat, place.lng])) continue;
@@ -69,7 +114,7 @@ function identifier(value) {
 }
 
 function checkedPoint(point) {
-  requireValue(isStudyPoint(point), 'A location is outside the Allen Park study map.');
+  requireValue(isStudyPoint(point), 'A location is outside the College Station study map.');
   return [...point];
 }
 
@@ -78,12 +123,40 @@ function checkedAngle(angle) {
   return ((angle % 360) + 360) % 360;
 }
 
+function checkedBenefits(value) {
+  if (value === undefined) return [];
+  requireValue(Array.isArray(value), 'Invalid community benefits selection.');
+  const seen = new Set();
+  for (const item of value) {
+    requireValue(benefitOptions.has(item), 'Unknown community benefit module.');
+    seen.add(item);
+  }
+  return [...seen].sort();
+}
+
 function placement(value, allowEmpty) {
   requireValue(value && typeof value === 'object', 'Missing placement.');
   const point = allowEmpty && value.point === null ? null : checkedPoint(value.point);
-  const design = value.design === undefined ? 'reference' : value.design;
-  requireValue(designOptions.has(design), 'Unknown facility design.');
-  return { point, angle: checkedAngle(value.angle), design };
+  const integration = value.integration === undefined ? 'd1' : value.integration;
+  requireValue(integrationOptions.has(integration), 'Unknown urban integration option.');
+  const rawCooling =
+    value.cooling !== undefined
+      ? value.cooling
+      : value.design !== undefined
+        ? (legacyCoolingMap[value.design] ?? value.design)
+        : 't1';
+  requireValue(coolingOptions.has(rawCooling), 'Unknown cooling technology option.');
+  const energy = value.energy === undefined ? 'e1' : value.energy;
+  requireValue(energyOptions.has(energy), 'Unknown energy supply option.');
+  const benefits = checkedBenefits(value.benefits);
+  return {
+    point,
+    angle: checkedAngle(value.angle),
+    integration,
+    cooling: rawCooling,
+    energy,
+    benefits
+  };
 }
 
 function checkedList(list, limit, label, read) {
@@ -131,7 +204,7 @@ function readNote(note) {
 }
 
 function normalize(value) {
-  requireValue(value && value.version === 1, 'Choose a DataScope version 1 workshop file.');
+  requireValue(value && (value.version === 2 || value.version === 1), 'Choose a DataScope workshop file.');
   const scenarios = checkedList(
     value.scenarios,
     WORKSHOP_LIMITS.scenarios,
@@ -139,23 +212,28 @@ function normalize(value) {
     readScenario
   );
   const notes = checkedList(value.notes, WORKSHOP_LIMITS.notes, 'community notes', readNote);
-  const active = identifier(value.active);
+  let active = identifier(value.active);
+  if (active === 'proposal') active = 'conventional';
+  if (active === 'setback') active = 'environmental';
   requireValue(
     standardChoices.has(active) || scenarios.some((item) => item.id === active),
     'Unknown active placement.'
   );
   const view = placement(value, active === 'none');
   requireValue(active !== 'none' || view.point === null, 'The no-build option must have no footprint.');
-  return { version: 1, active, ...view, scenarios, notes };
+  return { version: 2, active, ...view, scenarios, notes };
 }
 
 export function initialWorkspace(center = site.center) {
   return {
-    version: 1,
-    active: 'proposal',
+    version: 2,
+    active: 'conventional',
     point: checkedPoint(center),
     angle: 0,
-    design: 'reference',
+    integration: 'd1',
+    cooling: 't1',
+    energy: 'e1',
+    benefits: [],
     scenarios: [],
     notes: []
   };
@@ -181,7 +259,7 @@ export function serializeWorkshop(state) {
 
 function storageKey() {
   const basePath = globalThis.location ? new URL('.', globalThis.location.href).pathname : '/';
-  return 'datascope:workshop:v1:' + basePath;
+  return 'datascope:college-station:v2:' + basePath;
 }
 
 let lastLocalState = null;
@@ -229,7 +307,6 @@ export function saveWorkspace(state, { replace = false } = {}) {
     lastLocalState = local;
     return true;
   } catch {
-    // Callers can keep working in memory and offer an export when the browser cannot save.
     return false;
   }
 }

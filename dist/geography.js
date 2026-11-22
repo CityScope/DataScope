@@ -1,128 +1,272 @@
 // Workshop annotations use latitude, longitude. Outlines and landmark points are
-// authored for neighborhood-scale comparison. Source data stays with its publisher.
-const planning =
-  'https://www.cityofallenpark.org/Documents/Agenda%20%26%20Minutes/Planning%20Commission/2026/2026.01.08%20AP%20PC%20Packet.pdf';
-const minutes =
-  'https://www.cityofallenpark.org/Documents/Agenda%20%26%20Minutes/Planning%20Commission/2026/Minutes/2026.06.04%20AP%20PC%20Minutes%20DRAFT.pdf';
-const county = 'https://experience.arcgis.com/experience/f6cce4d36802431d8c577e97543c6f9c';
-const water = 'https://gisp.mcgi.state.mi.us/arcgis/rest/services/BaseMap/CommonQueries/MapServer/15';
-const school = 'https://www.resa.net/downloads/resa/wayne-county-schools-directory-print.pdf';
-const parks = 'https://www.cityofallenpark.org/Documents/Community/Magazine/2023-Q1.pdf';
-const housing = 'https://maplehts.com/map-directions/';
+// authored for neighborhood-scale comparison in College Station, Texas. Source
+// records remain with their respective municipal, state, and federal publishers.
+const udoUpdate =
+  'https://communityimpact.com/bryan-college-station/government/college-station-changes-ordinance-for-future-data-center-construction/';
+const cstxPlanning = 'https://www.cstx.gov/departments___city_hall/pds';
+const cstxParks = 'https://www.cstx.gov/departments___city_hall/parks/parks/texas_independence_park';
+const bvgcd = 'https://brazosvalleygcd.org/';
+const ercot = 'https://www.ercot.com/gridmktinfo/dashboards';
+const langfordSite = 'https://www.mrcthelangford.org/';
+const bswSite = 'https://www.bswhealth.com/locations/college-station-hospital';
+const csisd = 'https://pce.csisd.org/';
+const lickCreek = 'https://www.cstx.gov/departments___city_hall/parks/parks/lick_creek_park';
 
-// Figure 1 on page 22 of the January packet identifies the project on the east
-// side of Enterprise. The figure explicitly calls its lot lines approximate.
-// This hand-trace was registered to the northeast tip of the parent parcel and
-// the Arno intersections at Hanfor, Keppen, Russell and Euclid (Census TIGER).
-// The current county viewer shows the larger parent lot at this location.
+// Approximate CUP study tract inside College Station's Midtown Business Park
+// east of SH 6 / Midtown Drive, south of Rock Prairie Rd E & Texas Independence
+// Park, north of William D. Fitch Pkwy, and west of the Lick Creek tributary.
 export const site = {
-  center: [42.26862, -83.20767],
-  address: '7500 Enterprise Drive',
-  parcel: '30-008-99-0001-712',
+  center: [30.5704, -96.2624],
+  address: 'Midtown Business Park · Lakeway Dr & SH 6',
+  parcel: 'Midtown CUP Study Area · College Station, TX 77845',
   boundary: [
-    [42.26955, -83.20844],
-    [42.27037, -83.20504],
-    [42.26687, -83.20802],
-    [42.26733, -83.20902],
-    [42.26723, -83.20947],
-    [42.26722, -83.20983],
-    [42.26713, -83.21007],
-    [42.26716, -83.21047],
-    [42.26955, -83.20844]
+    [30.57256, -96.26636],
+    [30.57399, -96.2599],
+    [30.57193, -96.25781],
+    [30.56932, -96.25875],
+    [30.56779, -96.26089],
+    [30.57256, -96.26636]
   ],
-  boundaryLabel: 'Approximate study parcel',
-  source: planning
+  boundaryLabel: 'Midtown Business Park study tract',
+  source: udoUpdate
 };
 
-// Named school and housing street addresses were cross-checked against Wayne
-// County GIS and located using the Esri address locator. The park pin is an
-// interior reference point checked against the city's park inventory and map.
+// Named community receptors and nearby neighborhoods referenced during the
+// Sept. 2025 Midtown review and Oct. 2026 UDO CUP discussions.
 export const places = [
   {
-    id: 'riel',
-    name: 'John Riel Memorial Park',
-    type: 'park',
-    lat: 42.26855,
-    lng: -83.20563,
-    source: parks
+    id: 'langford',
+    name: 'The Langford Assisted Living',
+    type: 'senior',
+    lat: 30.57178,
+    lng: -96.26896,
+    source: langfordSite
   },
   {
-    id: 'melvindale',
-    name: 'Melvindale High School',
-    type: 'school',
-    lat: 42.27421,
-    lng: -83.2034,
-    source: school
+    id: 'midtown-reserve',
+    name: 'Midtown Reserve homes',
+    type: 'housing',
+    lat: 30.57485,
+    lng: -96.26745,
+    source: cstxPlanning
   },
-  { id: 'maple', name: 'Maple Heights', type: 'housing', lat: 42.26933, lng: -83.1985, source: housing }
+  {
+    id: 'independence',
+    name: 'Texas Independence Park',
+    type: 'park',
+    lat: 30.5776,
+    lng: -96.2626,
+    source: cstxParks
+  },
+  {
+    id: 'pebble-creek',
+    name: 'Pebble Creek & Bridle Gate',
+    type: 'housing',
+    lat: 30.56535,
+    lng: -96.2538,
+    source: cstxPlanning
+  },
+  {
+    id: 'pebble-elem',
+    name: 'Pebble Creek Elementary',
+    type: 'school',
+    lat: 30.55824,
+    lng: -96.24929,
+    source: csisd
+  },
+  {
+    id: 'medical',
+    name: 'Baylor Scott & White Medical',
+    type: 'medical',
+    lat: 30.58315,
+    lng: -96.27901,
+    source: bswSite
+  }
 ];
 
-// Selected bends capture the local reach for orientation. These are approximate
-// centerlines; neither line defines a bank, floodplain, wetland or legal buffer.
+// Real OpenStreetMap centerlines for Lick Creek (north of Midtown) and Spring
+// Creek (southeast drainage). Floodways and buffers require FEMA/city verification.
 export const river = [
-  [42.2743, -83.2192],
-  [42.2738, -83.2172],
-  [42.2746, -83.215],
-  [42.2744, -83.2136],
-  [42.2741, -83.2126],
-  [42.2732, -83.211],
-  [42.2723, -83.2117],
-  [42.2717, -83.2116],
-  [42.2714, -83.2104],
-  [42.2726, -83.2081],
-  [42.2716, -83.2067],
-  [42.271, -83.2064],
-  [42.2712, -83.2058],
-  [42.2707, -83.2052],
-  [42.2719, -83.2039],
-  [42.2725, -83.2038],
-  [42.2726, -83.2033],
-  [42.2724, -83.2018],
-  [42.2717, -83.2008],
-  [42.2701, -83.1997],
-  [42.2695, -83.1981],
-  [42.2705, -83.1964],
-  [42.2714, -83.1952]
+  [30.57619, -96.27262],
+  [30.576, -96.27254],
+  [30.57568, -96.27209],
+  [30.57597, -96.27128],
+  [30.57554, -96.27094],
+  [30.5752, -96.27124],
+  [30.57464, -96.27073],
+  [30.57479, -96.27015],
+  [30.57502, -96.26996],
+  [30.57479, -96.26981],
+  [30.5743, -96.26973],
+  [30.57396, -96.26923],
+  [30.57394, -96.26874],
+  [30.57354, -96.26868],
+  [30.57316, -96.26765],
+  [30.57346, -96.26728],
+  [30.57437, -96.26733],
+  [30.57442, -96.26604],
+  [30.57517, -96.26616],
+  [30.57446, -96.26527],
+  [30.57541, -96.26385],
+  [30.57563, -96.26264],
+  [30.57611, -96.26154],
+  [30.57498, -96.26213],
+  [30.57455, -96.25992],
+  [30.57565, -96.25729],
+  [30.57647, -96.25683],
+  [30.57637, -96.25491],
+  [30.57577, -96.25313],
+  [30.57547, -96.25176]
+];
+
+export const springCreek = [
+  [30.56178, -96.26385],
+  [30.56336, -96.26405],
+  [30.56371, -96.26362],
+  [30.56495, -96.26257],
+  [30.56499, -96.26171],
+  [30.56504, -96.25994],
+  [30.56549, -96.25996],
+  [30.5663, -96.26016],
+  [30.56669, -96.25976],
+  [30.56683, -96.25932],
+  [30.56662, -96.258],
+  [30.56722, -96.25727],
+  [30.56711, -96.25669],
+  [30.56766, -96.25626],
+  [30.56793, -96.25595],
+  [30.56832, -96.25617],
+  [30.56834, -96.25671],
+  [30.56883, -96.25643],
+  [30.56874, -96.25584],
+  [30.56903, -96.25556],
+  [30.56914, -96.25496],
+  [30.5694, -96.25502],
+  [30.56966, -96.25487],
+  [30.56945, -96.25448],
+  [30.56964, -96.25422],
+  [30.57002, -96.25418],
+  [30.57013, -96.25331],
+  [30.56982, -96.25303],
+  [30.56983, -96.2525],
+  [30.57033, -96.25176]
 ];
 
 export const sources = [
   {
-    title: 'Allen Park planning review',
-    url: planning,
+    title: 'College Station Oct. 2026 UDO CUP Amendment',
+    url: udoUpdate,
     description:
-      'Pages 21–23 identify the parcel, adjacent uses and changes to the equipment layout. The approximate lot outline is drawn from Figure 1.'
+      'City Council unanimously defined data centers (>5,000 sq ft) and required a Conditional Use Permit limited to Business Park and Light/Heavy Industrial zones.'
   },
   {
-    title: 'June 2026 site plan decision',
-    url: minutes,
+    title: 'City of College Station Planning & Development',
+    url: cstxPlanning,
     description:
-      'Meeting minutes document the denial of the preliminary site plan and the commission’s findings about water, neighboring properties and noise.'
+      'Unified Development Ordinance zoning districts, Midtown Business Park planning records, and Rock Prairie Rd E / William D. Fitch Pkwy corridor plans.'
   },
   {
-    title: 'Wayne County parcel viewer',
-    url: county,
+    title: 'Brazos Valley Groundwater Conservation District (BVGCD)',
+    url: bvgcd,
     description:
-      'County assessment mapping provides parcel context. The project outline follows the city planning exhibit.'
+      'Governs Simsboro / Carrizo-Wilcox Aquifer pumping allocations (~22,626 acre-ft/yr permitted to College Station Utilities, supplying ~98% of city water).'
   },
   {
-    title: 'Michigan hydrography',
-    url: water,
-    description: 'Selected Ecorse River bends are generalized from the state’s stream centerlines.'
-  },
-  {
-    title: 'Wayne County schools directory',
-    url: school,
-    description: 'Melvindale High School is at 4500 Enterprise Drive. The map uses an address point.'
-  },
-  {
-    title: 'Allen Park parks inventory',
-    url: parks,
+    title: 'ERCOT Grid Conditions & Texas Interconnection',
+    url: ercot,
     description:
-      'John Riel Memorial Park is west of Arno Avenue, between Hanfor and O’Connor. The map uses an interior point.'
+      'Texas bulk grid reliability, summer peak demand, and large-load interconnection oversight alongside College Station Utilities (CSU) and PUCT rate rules.'
   },
   {
-    title: 'Maple Heights',
-    url: housing,
-    description: 'The retirement community lists 4600 Allen Road. The map uses an address point.'
+    title: 'Texas Independence Park at Midtown',
+    url: cstxParks,
+    description:
+      '149-acre municipal park at 6904 Rock Prairie Rd E anchoring the walkable Midtown greenbelt, retail, and regional sports-complex vision.'
+  },
+  {
+    title: 'The Langford Assisted Living Center',
+    url: langfordSite,
+    description:
+      'Senior living community at 1851 Carroll Fancher Way west of Midtown Drive — a key sensitive acoustic and health receptor.'
+  },
+  {
+    title: 'Baylor Scott & White Medical Center – College Station',
+    url: bswSite,
+    description:
+      'Regional hospital campus at 700 Scott & White Drive along SH 6 — referenced in testimony regarding medical vulnerability and quiet corridors.'
+  },
+  {
+    title: 'Pebble Creek Elementary & Lick Creek Park',
+    url: lickCreek,
+    description:
+      'Pebble Creek Elementary (200 Parkview Dr) and Lick Creek Park (13600 E. Rock Prairie Rd) anchor residential and ecological buffers southeast of Midtown.'
+  }
+];
+
+export const caseTimeline = [
+  {
+    step: '01',
+    date: 'Nov 2024',
+    tone: 'amber',
+    icon: 'footprint',
+    title: 'Closed-door Midtown proposal',
+    tags: ['10-month NDA', '200 acres'],
+    text: 'A developer negotiated privately to buy 200 city-owned acres in Midtown Business Park for a 600 MW AI data center next to homes and parks.',
+    cites: [{ label: 'City Planning', url: cstxPlanning }]
+  },
+  {
+    step: '02',
+    date: 'Sept 2025',
+    tone: 'red',
+    icon: 'users',
+    title: 'Residents push back; Council votes no',
+    tags: ['5,000+ signatures', 'Rejected'],
+    text: 'With only days of public notice, residents raised noise, groundwater, electric rate, and park-loss concerns. Council unanimously rejected the sale.',
+    cites: [{ label: 'Texas Independence Park', url: cstxParks }]
+  },
+  {
+    step: '03',
+    date: 'Aug–Sept 2026',
+    tone: 'blue',
+    icon: 'bolt',
+    title: 'County & state tighten oversight',
+    tags: ['Water & grid audits', 'Stricter rules'],
+    text: 'Brazos County added water-efficiency and self-funded grid rules to a nearby project while Texas paused new grid and environmental permits.',
+    cites: [
+      { label: 'ERCOT', url: ercot },
+      { label: 'Aquifer District', url: bvgcd }
+    ]
+  },
+  {
+    step: '04',
+    date: 'Oct 2026',
+    tone: 'slate',
+    icon: 'layers',
+    title: 'Public permit now required',
+    tags: ['Over 5,000 sq ft', 'Public hearing'],
+    text: 'College Station updated its zoning rules so any data center over 5,000 sq ft requires a public Conditional Use Permit—even on private land.',
+    cites: [{ label: 'Zoning Change', url: udoUpdate }]
+  },
+  {
+    step: '05',
+    date: 'Nov 2026',
+    tone: 'amber',
+    icon: 'target',
+    title: 'Voters back local safeguards',
+    tags: ['59% Mayor vote', 'Statewide focus'],
+    text: 'Voters elected a mayor who opposed the Midtown site, while statewide elections elevated water, electric grid, and local-consent rules.',
+    cites: [{ label: 'Langford Corridor', url: langfordSite }]
+  },
+  {
+    step: '06',
+    date: 'Now',
+    tone: 'mint',
+    icon: 'cube',
+    isTool: true,
+    title: 'Where DataScope enters',
+    tags: ['Before any vote', 'Shared public tool'],
+    text: 'Before a future project reaches a hearing, residents, planners, and local experts can compare designs, buffers, and a No-Build park option together.',
+    cites: [],
+    action: { label: 'Compare Midtown No-Build', preset: 'none' }
   }
 ];

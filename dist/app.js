@@ -1,14 +1,30 @@
-import { site, places, sources } from './geography.js';
+import { createSentiment } from './sentiment.js';
+import {
+  loadEnvironmentalLayers,
+  onEnvironmentChange,
+  environmentalSources,
+  environmentalState
+} from './environment.js';
+import { evaluateConstraints, nearbyConstraints } from './studio/constraints.js';
+import { site, places, caseTimeline } from './geography.js';
+import { createReadouts, methodsHTML } from './studio/readouts.js';
+import {
+  analyzePlacement,
+  integrationSpecs,
+  coolingSpecs,
+  energySpecs,
+  benefitSpecs,
+  midtownAlternative
+} from './studio/analysis.js';
+import { normalizeBearing } from './studio/rotation.js';
 import { createMap } from './map.js';
 import { icon, hydrateIcons } from './icons.js';
 import {
   loadWorkspace,
   saveWorkspace,
-  parseWorkshop,
-  serializeWorkshop,
-  measure,
   isStudyPoint,
-  WORKSHOP_LIMITS
+  WORKSHOP_LIMITS,
+  presetScenarios
 } from './workshop.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,66 +34,95 @@ const escapeHTML = (value) =>
     (x) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[x]
   );
 const id = () => crypto.randomUUID();
-const fields = ['park', 'school', 'housing'];
-const kinds = { park: 'Park', school: 'School', housing: 'Senior housing' };
-const topics = ['Question', 'Suggestion', 'Concern', 'Local knowledge'];
-const designs = {
-  reference: {
-    name: 'Reference design',
-    energy: 182.2,
-    water: 3,
-    detail:
-      'Annual electricity assumes 26 MW at 80% average load. Annual cooling-water supply is set at 3 million gallons.'
+const topics = [
+  'Noise & low-frequency hum',
+  'Simsboro aquifer & water',
+  'ERCOT grid & rates',
+  'Midtown vision & buffers',
+  'Community benefits & jobs',
+  'NDA & CUP governance'
+];
+
+const pillarMeta = {
+  integration: {
+    heading: 'Design & urban integration',
+    specs: integrationSpecs,
+    icons: { d1: 'footprint', d2: 'park', d3: 'shield', d4: 'district' }
   },
-  efficient: {
-    name: 'Higher efficiency',
-    energy: 151.8,
-    water: null,
-    detail:
-      'The same computing workload with power usage effectiveness improving from 1.50 to 1.25. This scenario models electricity only.'
+  cooling: {
+    heading: 'Cooling & impact mitigation',
+    specs: coolingSpecs,
+    thumbs: {
+      t1: 'assets/design-reference.webp',
+      t2: 'assets/design-dry.webp',
+      t3: 'assets/design-efficient.webp',
+      t4: 'assets/design-efficient.webp'
+    }
   },
-  dry: {
-    name: 'Dry cooling',
-    energy: 184.0,
-    water: 0.3,
-    detail:
-      'The workshop assumes 90% less cooling water and 1% more electricity than the reference design.'
+  energy: {
+    heading: 'Energy generation & grid',
+    specs: energySpecs,
+    icons: { e1: 'bolt', e2: 'sun', e3: 'wind', e4: 'atom' }
+  },
+  benefits: {
+    heading: 'Community benefits',
+    specs: benefitSpecs,
+    icons: { b1: 'users', b2: 'dollar', b3: 'shield', b4: 'book' }
   }
 };
+
 const state = loadWorkspace(site.center);
 const ui = {
-  tab: 'siting',
+  view: 'studio',
+  camera: 'site',
   mode: 'explore',
-  layers: { places: true, site: true, river: true, notes: true },
-  selectedNote: null
+  pillar: 'integration',
+  domain: 'overview',
+  layers: { places: true, site: true, river: true, sound: true, constraints: true, environment: true },
+  planLayers: { places: true, site: true, river: true, sound: true, constraints: true, environment: true },
+  selectedNote: null,
+  lens: 'sound',
+  receptorId: 'langford'
 };
-const panel = $('panel'),
-  dialog = $('dialog');
+const dialog = $('dialog');
+const updateReadouts = createReadouts($('metrics'));
 let timer,
   map,
-  sessionSaved = true,
+  studio,
+  aerial,
+  sentiment,
+  sceneContains = () => true,
+  unavailable = false,
   previousCustom = null,
   mapCenter = site.center,
-  imported = null;
+  popoverAnchor = null,
+  popoverPinned = false;
 const noBuild = () => state.active === 'none';
-const proposalDistances = measure(site.center, places);
+
 function scenarioName(which = state.active) {
-  if (which === 'proposal') return 'Proposed site';
-  if (which === 'custom') return 'My placement';
-  if (which === 'none') return 'No build';
-  return state.scenarios.find((s) => s.id === which)?.name || 'Saved placement';
+  if (Object.hasOwn(presetScenarios, which)) return presetScenarios[which].name;
+  if (which === 'custom') return 'My custom scenario';
+  if (which === 'none') return 'Midtown alt (No build)';
+  return state.scenarios.find((s) => s.id === which)?.name || 'Saved scenario';
 }
 function snapshot() {
-  return { point: state.point && [...state.point], angle: state.angle, design: state.design };
+  return {
+    point: state.point && [...state.point],
+    angle: state.angle,
+    integration: state.integration,
+    cooling: state.cooling,
+    energy: state.energy,
+    benefits: [...(state.benefits || [])]
+  };
 }
 function remember() {
   if (state.active === 'custom') previousCustom = snapshot();
 }
 function store(replace = false) {
-  sessionSaved = saveWorkspace(state, { replace });
+  const sessionSaved = saveWorkspace(state, { replace });
   $('local-status').innerHTML = sessionSaved
     ? '<b></b> Saved on this device'
-    : 'In memory · export to keep';
+    : 'Browser storage unavailable · notes are temporary';
 }
 function toast(message) {
   clearTimeout(timer);
@@ -87,293 +132,494 @@ function toast(message) {
     $('toast').hidden = true;
   }, 3600);
 }
-function readLink() {
-  const q = new URLSearchParams(location.hash.slice(1));
-  if (q.get('view') !== 'placement') return false;
-  if (q.get('site') === 'none') {
-    Object.assign(state, { active: 'none', point: null, angle: 0, design: 'reference' });
-    return true;
-  }
-  if (!q.has('lat') || !q.has('lng')) return false;
-  const point = [Number(q.get('lat')), Number(q.get('lng'))],
-    angle = Number(q.get('angle') || 0),
-    design = q.get('design') || 'reference';
-  if (!isStudyPoint(point) || !Number.isFinite(angle) || !Object.hasOwn(designs, design)) return false;
-  Object.assign(state, { active: 'custom', point, angle: ((angle % 360) + 360) % 360, design });
-  return true;
+
+function hideOptionPopover() {
+  const pop = $('option-popover');
+  if (pop) pop.hidden = true;
+  if (popoverAnchor) popoverAnchor.setAttribute('aria-expanded', 'false');
+  popoverAnchor = null;
+  popoverPinned = false;
 }
-function addressLink() {
-  const u = new URL(location.href);
-  const q = new URLSearchParams({ view: 'placement' });
-  if (noBuild()) q.set('site', 'none');
-  else {
-    q.set('lat', state.point[0].toFixed(6));
-    q.set('lng', state.point[1].toFixed(6));
-    q.set('angle', state.angle);
-    q.set('design', state.design);
-  }
-  u.hash = q.toString();
-  return u.href;
-}
-function setDrawer(open) {
-  const isOpen = open && matchMedia('(max-width:760px)').matches;
-  $('sidebar').classList.toggle('open', isOpen);
-  $('scrim').hidden = !isOpen;
-  $('open-drawer').setAttribute('aria-expanded', isOpen);
-  if (isOpen) $('close-drawer').focus();
-}
-function showTab(tab) {
-  ui.tab = tab;
-  panel.scrollTop = 0;
-  document.querySelectorAll('[data-tab]').forEach((b) => {
-    if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
-  renderPanel();
-}
-function option(key, ico, title, subtitle) {
-  const active = state.active === key;
-  return (
-    '<button class="option ' +
-    (active ? 'active' : '') +
-    '" data-choice="' +
-    escapeHTML(key) +
-    '" aria-pressed="' +
-    active +
-    '"><span class="opt-icon">' +
-    icon(ico) +
-    '</span><span><strong>' +
-    escapeHTML(title) +
-    '</strong><small>' +
-    escapeHTML(subtitle) +
-    '</small></span><span class="radio"></span></button>'
-  );
-}
-function designSelect() {
-  return (
-    '<label class="field">Facility design<select id="design">' +
-    Object.entries(designs)
-      .map(
-        ([k, d]) =>
-          '<option value="' +
-          k +
-          '" ' +
-          (state.design === k ? 'selected' : '') +
-          '>' +
-          d.name +
-          '</option>'
-      )
-      .join('') +
-    '</select></label>'
-  );
-}
-function sitingPanel() {
-  const saved = state.scenarios
-    .map((s) => option(s.id, 'save', s.name, designs[s.design].name))
-    .join('');
-  const edit = state.point
-    ? '<div class="action-row"><button class="primary" data-act="move">' +
-      icon('move') +
-      'Move footprint</button><button data-act="save">' +
-      icon('save') +
-      'Save option</button></div>' +
-      designSelect() +
-      '<details class="section-detail" data-detail="adjust"><summary>Footprint controls</summary><p class="hint">Drag the teal handle or move in 50 ft steps.</p><div class="nudge-row">' +
-      ['North', 'West', 'East', 'South']
-        .map(
-          (d, i) =>
-            '<button aria-label="Move 50 feet ' +
-            d.toLowerCase() +
-            '" title="' +
-            d +
-            ' 50 ft" data-nudge="' +
-            d +
-            '">' +
-            ['↑', '←', '→', '↓'][i] +
-            '</button>'
-        )
-        .join('') +
-      '</div><label class="field" for="angle">Rotation <span id="degrees">' +
-      state.angle +
-      '°</span></label><div class="nudge-row"><input id="angle" type="range" min="0" max="355" step="5" value="' +
-      state.angle +
-      '" aria-label="Footprint rotation"></div></details>' +
-      '<details class="section-detail" data-detail="model"><summary>Modeled resource use</summary>' +
-      modelDetails(state.design) +
-      '</details>'
-    : '<p class="hint">No new facility is added. Use this baseline when comparing locations or resource use.</p>';
-  return (
-    '<div class="facility"><div class="plate"><div class="capacity"><strong>26 <small>MW</small></strong><span>Proposed capacity</span></div><img src="assets/facility.svg" alt="Illustration of a data center"></div><div class="facility-caption"><b>7500 Enterprise Drive</b><span>Site plan denied</span></div></div>' +
-    '<p class="smallhead">Siting options</p><div class="options">' +
-    option('proposal', 'plan', 'Proposed site', 'Enterprise Drive parcel') +
-    option('custom', 'move', 'My placement', 'Choose any point on the study map') +
-    option('none', 'subtract', 'No build', 'Keep the current land use') +
-    saved +
-    '</div>' +
-    '<div class="control-group"><p class="smallhead">' +
-    escapeHTML(scenarioName()) +
+
+function showOptionPopover(trigger, { pin = false } = {}) {
+  const pillar = trigger?.dataset.infoPillar;
+  const opt = trigger?.dataset.infoOpt;
+  const item = pillarMeta[pillar]?.specs?.[opt];
+  const pop = $('option-popover');
+  if (!item || !pop) return;
+  if (popoverAnchor && popoverAnchor !== trigger) popoverAnchor.setAttribute('aria-expanded', 'false');
+  popoverAnchor = trigger;
+  if (pin) popoverPinned = true;
+  trigger.setAttribute('aria-expanded', 'true');
+  pop.innerHTML =
+    '<div class="pop-head"><strong>' +
+    escapeHTML(item.name) +
+    '</strong><span>' +
+    escapeHTML(item.code) +
+    '</span></div><p>' +
+    escapeHTML(item.detail) +
     '</p>' +
-    edit +
-    '</div>'
-  );
-}
-function modelDetails(design) {
-  const d = designs[design];
-  return (
-    '<div class="model-row"><span>Electricity / year</span><b>' +
-    d.energy +
-    ' GWh</b></div><div class="model-row"><span>Cooling water / year</span><b>' +
-    (d.water === null ? 'Unmodeled' : d.water + 'M gal') +
-    '</b></div><p class="minor">' +
-    d.detail +
-    ' Illustrative workshop estimates.</p>'
-  );
-}
-function notesPanel() {
-  const list = [...state.notes]
-    .reverse()
-    .map(
-      (n) =>
-        '<button class="note-card" data-note="' +
-        escapeHTML(n.id) +
-        '"><span>' +
-        escapeHTML(n.topic) +
-        '</span><p>' +
-        escapeHTML(n.text.length > 100 ? n.text.slice(0, 97) + '…' : n.text) +
-        '</p><small>' +
-        escapeHTML(n.scenario) +
-        '</small></button>'
-    )
-    .join('');
-  return (
-    '<h2>Community notes</h2><p class="hint">Mark where something matters to you. Each note keeps the placement you were viewing.</p><button class="wide" data-act="add-note">' +
-    icon('pinplus') +
-    'Place a note</button>' +
-    (list ||
-      '<div class="empty">' +
-        icon('note') +
-        '<h3>No notes yet</h3><p class="hint">Choose a street, park or other place to leave your first question.</p></div>') +
-    '<p class="minor">Notes stay in this browser. Use Workshop files to exchange them with other participants.</p>'
-  );
-}
-const cityRecords =
-  'https://www.cityofallenpark.org/government/agenda_and_minutes/planning_commission.php';
-function evidencePanel() {
-  return (
-    '<h2>Case evidence</h2><p class="hint">Allen Park’s Planning Commission denied the preliminary site plan on June 4, 2026. Its findings included unresolved engineering questions and noise near homes and a public park.</p><div class="ref"><a target="_blank" rel="noopener" href="' +
-    cityRecords +
-    '">City planning record</a><p>7500 Enterprise Drive · Parcel 30-008-99-0001-712. Review the June decision and the January site drawings. The applicant moved outdoor equipment west so the building could shield the park and homes to the east.</p></div><div class="ref"><h3>Workshop assumptions</h3><p>The teal shape is a movable 90 × 46 m building, about 45,000 sq ft. Its starting point is inside the proposal parcel. Its shape and orientation are illustrative.</p><p>Distances run from its center to selected public reference points. Site suitability, noise, water service and available grid capacity require further study.</p></div><div class="ref"><h3>Energy and water</h3><p>Scenarios use the DataCenterScope case study, pages 16–20 and 34–39. Energy uses an 80% load assumption. Water values are scenario inputs.</p></div>' +
-    sources
-      .map(
-        (s) =>
-          '<div class="ref"><a target="_blank" rel="noopener" href="' +
-          escapeHTML(s.url) +
-          '">' +
-          escapeHTML(s.title) +
-          '</a><p>' +
-          escapeHTML(s.description) +
-          '</p></div>'
-      )
-      .join('')
-  );
-}
-function renderPanel() {
-  const scroll = panel.scrollTop,
-    expanded = new Set([...panel.querySelectorAll('details[open]')].map((e) => e.dataset.detail));
-  panel.innerHTML =
-    ui.tab === 'siting' ? sitingPanel() : ui.tab === 'notes' ? notesPanel() : evidencePanel();
-  panel.querySelectorAll('details').forEach((e) => {
-    e.open = expanded.has(e.dataset.detail);
-  });
-  panel.scrollTop = scroll;
-  $('count').textContent = state.notes.length;
-}
-function distance(m) {
-  return m == null ? '—' : (m / 1609.344).toFixed(2);
-}
-function insideStudyParcel([lat, lng]) {
-  const ring = site.boundary;
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [y1, x1] = ring[i],
-      [y2, x2] = ring[j];
-    if (y1 > lat !== y2 > lat && lng < ((x2 - x1) * (lat - y1)) / (y2 - y1) + x1) inside = !inside;
+    (item.hostNote ? '<small>' + escapeHTML(item.hostNote) + '</small>' : '');
+  pop.hidden = false;
+  const card = trigger.closest('.design-card') || trigger;
+  const tray = document.querySelector('.design-tray');
+  const rect = card.getBoundingClientRect();
+  const trayRect = tray.getBoundingClientRect();
+  const popH = pop.offsetHeight || 110;
+  const top = Math.max(76, Math.min(window.innerHeight - popH - 22, rect.top + rect.height / 2 - popH / 2));
+  if (window.innerWidth > 700) {
+    pop.style.top = top + 'px';
+    pop.style.right = Math.max(18, window.innerWidth - trayRect.left + 12) + 'px';
+    pop.style.left = 'auto';
+  } else {
+    pop.style.top = Math.max(100, trayRect.top - popH - 10) + 'px';
+    pop.style.left = '12px';
+    pop.style.right = '12px';
   }
-  return inside;
 }
-function renderMetrics(point = state.point) {
-  const values = measure(point, places);
-  $('parcel-context').hidden = !ui.layers.site;
-  $('parcel-state').textContent = point
-    ? insideStudyParcel(point)
-      ? 'Center inside parcel'
-      : 'Center outside parcel'
-    : 'No new footprint';
-  $('origin').textContent = point ? 'From footprint center · straight line' : 'No new facility';
-  $('metrics').innerHTML = fields
-    .map((k) => {
-      const v = values[k],
-        place = places.find((p) => p.type === k);
-      const change =
-        v && proposalDistances[k]
-          ? Math.round(((v.meters - proposalDistances[k].meters) / 1609.344) * 100)
-          : 0;
-      const delta = change
-        ? '<span class="distance-change" title="Change from the proposed site">' +
-          Math.abs(change / 100).toFixed(2) +
-          ' mi ' +
-          (change > 0 ? 'farther' : 'closer') +
-          '</span>'
-        : '';
+
+function renderPillarChoices() {
+  hideOptionPopover();
+  const meta = pillarMeta[ui.pillar] || pillarMeta.integration;
+  $('pillar-heading').textContent = noBuild() ? 'Midtown alternative' : meta.heading;
+  document.querySelectorAll('[data-pillar][role="tab"]').forEach((b) => {
+    b.setAttribute('aria-selected', String(b.dataset.pillar === ui.pillar));
+    b.disabled = noBuild();
+  });
+
+  if (noBuild()) {
+    $('design-choices').innerHTML =
+      '<div class="nobuild-card">' +
+      '<strong>Walkable Midtown Vision</strong>' +
+      '<p>Texas Independence Park, greenbelts, retail, and "The Station" regional sports complex — kept first-class alongside data-center options.</p>' +
+      '<div class="nobuild-grid">' +
+      '<div><span>Est. tax</span><b>$' + midtownAlternative.taxMYr.toFixed(1) + 'M/yr</b></div>' +
+      '<div><span>Perm. jobs</span><b>~' + midtownAlternative.permanentJobs + ' FTE</b></div>' +
+      '<div><span>Grid / water</span><b>0 MW · 0 gal</b></div>' +
+      '</div>' +
+      '<button type="button" class="wide" data-preset-jump="community">Compare with Community-integrated</button>' +
+      '</div>';
+    $('design-specs').hidden = true;
+    $('design-caption').textContent = 'No data center placed · Midtown benchmark';
+    return;
+  }
+
+  const isMulti = ui.pillar === 'benefits';
+  const activeKey = isMulti ? null : state[ui.pillar];
+  const selectedBenefits = new Set(state.benefits || []);
+
+  $('design-choices').innerHTML = Object.entries(meta.specs)
+    .map(([key, item]) => {
+      const pressed = isMulti ? selectedBenefits.has(key) : activeKey === key;
+      const thumbHTML = meta.thumbs?.[key]
+        ? '<img aria-hidden="true" alt="" src="' + meta.thumbs[key] + '">'
+        : '<span class="card-badge" aria-hidden="true">' +
+          icon(meta.icons?.[key] || 'cube') +
+          '<em>' +
+          item.code +
+          '</em></span>';
       return (
-        '<div class="metric"><span class="metric-type">' +
-        icon(k) +
-        kinds[k] +
-        '</span><strong>' +
-        distance(v?.meters) +
-        (v ? ' <small>mi</small>' : '') +
-        '</strong>' +
-        delta +
-        '<p>' +
-        escapeHTML(v?.name ?? place?.name ?? 'No mapped place') +
-        '</p></div>'
+        '<div class="design-card-wrap">' +
+        '<button type="button" class="design-card' +
+        (isMulti ? ' is-check' : '') +
+        '" data-option-pillar="' +
+        ui.pillar +
+        '" data-option="' +
+        key +
+        '" aria-pressed="' +
+        pressed +
+        '">' +
+        thumbHTML +
+        '<span><strong>' +
+        escapeHTML(item.name) +
+        '</strong><small>' +
+        escapeHTML(item.subtitle) +
+        '</small></span><i class="' +
+        (isMulti ? 'check-dot' : 'radio') +
+        '"></i></button>' +
+        '<button type="button" class="opt-info" data-info-pillar="' +
+        ui.pillar +
+        '" data-info-opt="' +
+        key +
+        '" aria-label="About ' +
+        escapeHTML(item.name) +
+        '" title="Details">i</button>' +
+        '</div>'
       );
     })
     .join('');
+
+  const analysis = analyzePlacement(state, { receptorId: ui.receptorId });
+  $('design-specs').hidden = false;
+  if (ui.pillar === 'integration') {
+    const iSpec = integrationSpecs[state.integration];
+    $('design-specs').innerHTML =
+      '<div><span>Site capex Δ</span><b>+$' + iSpec.capexM + 'M</b></div>' +
+      '<div><span>Yard screen</span><b>−' + iSpec.yardAttenDb.toFixed(1) + ' dB</b></div>' +
+      '<div><span>Public space</span><b>' + iSpec.amenityAcres.toFixed(1) + ' ac</b></div>';
+  } else if (ui.pillar === 'cooling') {
+    $('design-specs').innerHTML =
+      '<div><span>105°F peak</span><b>' + analysis.peakMW.toFixed(1) + ' MW</b></div>' +
+      '<div><span>Simsboro cap</span><b>' + analysis.simsboroPct.toFixed(2) + '%</b></div>' +
+      '<div><span>Source @ 15 m</span><b>' + analysis.sourceDb15.toFixed(1) + ' dBA</b></div>';
+  } else if (ui.pillar === 'energy') {
+    const eSpec = energySpecs[state.energy];
+    $('design-specs').innerHTML =
+      '<div><span>Annual match</span><b>' + eSpec.matchPct + '%</b></div>' +
+      '<div><span>Off-site land</span><b>' +
+      (eSpec.offsiteSqMi ? eSpec.offsiteSqMi + ' sq mi' : eSpec.onsiteExtraAcres ? eSpec.onsiteExtraAcres + ' ac pad' : '0 sq mi') +
+      '</b></div>' +
+      '<div><span>Net CO₂</span><b>' + analysis.co2KtYr.toFixed(1) + ' kt/yr</b></div>';
+  } else {
+    $('design-specs').innerHTML =
+      '<div><span>Upfront pool</span><b>$' + analysis.upfrontPoolM.toFixed(0) + 'M</b></div>' +
+      '<div><span>Annual pact</span><b>$' + analysis.annualBenefitMYr.toFixed(2) + 'M/yr</b></div>' +
+      '<div><span>Perm. jobs</span><b>' + analysis.permanentJobs + ' FTE</b></div>';
+  }
+  $('design-caption').textContent = isMulti
+    ? 'Combine modules · $10M upfront + $0.5M/yr pool'
+    : '20 MW IT · 220 GWh/yr base · Zone 2A (TX)';
 }
+
+function renderControls() {
+  const opts = [
+    ...Object.entries(presetScenarios).map(([k, v]) => [k, v.name]),
+    ['none', 'Midtown alt (No build)'],
+    ['custom', 'My custom scenario'],
+    ...state.scenarios.map((s) => [s.id, s.name])
+  ];
+  const select = $('placement');
+  select.replaceChildren(...opts.map(([k, name]) => new Option(name, k)));
+  select.value = state.active;
+  document.querySelector('[data-camera="building"]').disabled = noBuild();
+  if (noBuild() && ui.camera === 'building') studio?.view('site');
+  document.querySelectorAll('[data-domain]').forEach((b) => {
+    b.setAttribute('aria-pressed', String(b.dataset.domain === ui.domain));
+  });
+  renderPillarChoices();
+}
+
+function renderMetrics(point = state.point, angle = state.angle) {
+  const current = { ...state, point, angle };
+  updateReadouts(current, ui.receptorId, ui.domain);
+  const check = evaluateConstraints(current);
+  const warningTitles = [...new Set(check.items.map((i) => i.title))];
+  const finding = $('context-finding');
+  finding.dataset.status = check.status;
+  finding.title = warningTitles.join(' · ');
+  finding.textContent = check.items.length
+    ? warningTitles.slice(0, 2).join(' · ') + (warningTitles.length > 2 ? ' · +' + (warningTitles.length - 2) + ' more' : '')
+    : point
+      ? 'No overlap with loaded CUP constraints'
+      : 'Midtown alternative (no data center)';
+  if (!$('context-content').hidden) {
+    $('context-distances').innerHTML = nearbyConstraints(current)
+      .slice(0, 3)
+      .map((i) => '<span>' + escapeHTML(i.label) + ' <b>' + Math.round(i.distance * 3.28084).toLocaleString() + ' ft</b></span>')
+      .join('');
+  }
+  const pending = environmentalState.filter((s) => s.state === 'loading'),
+    missing = environmentalState.filter((s) => s.state === 'unavailable');
+  $('environment-status').textContent = pending.length
+    ? 'Loading ' + pending.map((s) => s.label.toLowerCase()).join(', ') + '…'
+    : missing.length
+      ? 'Unavailable: ' + missing.map((s) => s.label.toLowerCase()).join(', ')
+      : 'USFWS, PAD-US & FEMA overlays loaded';
+  $('retry-environment').hidden = !missing.length;
+  $('environment-status').dataset.state = missing.length ? 'unavailable' : pending.length ? 'loading' : 'ready';
+  const hasFinding = check.items.length > 0;
+  const banner = $('siting-check');
+  banner.dataset.status = check.status;
+  banner.textContent = hasFinding
+    ? (check.status === 'conflict' ? 'Conflict' : 'Review') + ' · ' + warningTitles.length
+    : check.status === 'none'
+      ? 'No build'
+      : 'No overlap';
+  banner.setAttribute(
+    'aria-label',
+    'CUP placement check: ' + banner.textContent + (hasFinding ? '. ' + warningTitles.join('. ') : '')
+  );
+  banner.title = hasFinding
+    ? check.items.map((item) => item.detail).join(' ')
+    : 'Screens SH 6, Fitch Pkwy, Rock Prairie Rd E, Midtown Dr, Lick Creek tributary, parks, and loaded federal overlays.';
+}
+
+function evidencePanel() {
+  const renderStep = (item) =>
+    '<article class="ev-step' +
+    (item.isTool ? ' is-tool' : '') +
+    '" data-tone="' +
+    item.tone +
+    '">' +
+    '<div class="ev-step-head">' +
+    '<span class="ev-bubble" aria-hidden="true">' +
+    icon(item.icon) +
+    '<em>' +
+    item.step +
+    '</em></span>' +
+    '<span class="ev-date">' +
+    escapeHTML(item.date) +
+    '</span>' +
+    '<span class="ev-rail" aria-hidden="true"></span>' +
+    '</div>' +
+    '<div class="ev-card">' +
+    '<h3>' +
+    escapeHTML(item.title) +
+    '</h3>' +
+    '<div class="ev-tags">' +
+    item.tags.map((t) => '<span>' + escapeHTML(t) + '</span>').join('') +
+    '</div>' +
+    '<p>' +
+    escapeHTML(item.text) +
+    '</p>' +
+    '<div class="ev-foot">' +
+    (item.cites.length
+      ? item.cites
+          .map(
+            (c) =>
+              '<a class="ev-cite" target="_blank" rel="noopener" href="' +
+              escapeHTML(c.url) +
+              '">' +
+              escapeHTML(c.label) +
+              ' ↗</a>'
+          )
+          .join('')
+      : '') +
+    (item.action
+      ? '<button type="button" class="ev-jump" data-preset-jump="' +
+        escapeHTML(item.action.preset) +
+        '">' +
+        escapeHTML(item.action.label) +
+        ' →</button>'
+      : '') +
+    '</div></div></article>';
+
+  return (
+    '<div class="ev-wrap">' +
+    '<div class="ev-hero">' +
+    '<p>How a closed-door data-center proposal led College Station to require public review — and where <strong>DataScope</strong> helps residents, city planners, and engineers test options before any vote.</p>' +
+    '</div>' +
+    '<section class="ev-timeline" aria-label="College Station data-center timeline">' +
+    '<div class="ev-row">' +
+    caseTimeline.slice(0, 3).map(renderStep).join('') +
+    '</div>' +
+    '<div class="ev-bridge" aria-hidden="true"><span>Next: new public rules &amp; early community testing</span></div>' +
+    '<div class="ev-row">' +
+    caseTimeline.slice(3, 6).map(renderStep).join('') +
+    '</div></section>' +
+    '<div class="ev-section-label">Who uses DataScope in a real public process</div>' +
+    '<section class="ev-roles" aria-label="Who uses DataScope">' +
+    '<div class="ev-role">' +
+    '<span class="ev-role-ico">' +
+    icon('workshop') +
+    '</span><div><strong>Neighbors &amp; residents</strong><p>Check distance to homes and schools, compare a data center against keeping a park, and pin comments on the map.</p></div></div>' +
+    '<div class="ev-role">' +
+    '<span class="ev-role-ico">' +
+    icon('plan') +
+    '</span><div><strong>City planners</strong><p>Check candidate parcels against highways, creeks, flood zones, and parks early — before scheduling a public hearing.</p></div></div>' +
+    '<div class="ev-role">' +
+    '<span class="ev-role-ico">' +
+    icon('inspect') +
+    '</span><div><strong>Local engineers &amp; researchers</strong><p>Stress-test Texas summer power demand, local groundwater share, and emissions using open, shared assumptions.</p></div></div>' +
+    '</section>' +
+    '<section class="ev-guardrails" aria-label="What this tool can and cannot decide">' +
+    '<div class="ev-guard is-can">' +
+    '<h4>' +
+    icon('check') +
+    'What this tool can test early</h4><ul>' +
+    '<li>Distance from nearby homes, schools, senior living, parks, and creeks.</li>' +
+    '<li>Tradeoffs between a data center and keeping Midtown as parks, retail, and sports fields.</li>' +
+    '<li>How site layouts, cooling systems, power sources, and community benefits compare side by side.</li>' +
+    '</ul></div>' +
+    '<div class="ev-guard is-cant">' +
+    '<h4>' +
+    icon('shield') +
+    'What still requires city rules &amp; certified studies</h4><ul>' +
+    '<li><strong>Ending secrecy:</strong> Requiring developers to publish real power, water, and noise specs upfront.</li>' +
+    '<li><strong>Certified sound studies:</strong> Quick models miss deep low-frequency hum and need stamped acoustic engineering.</li>' +
+    '<li><strong>Enforceable protections:</strong> Legally binding permit rules, groundwater limits, and electric-bill safeguards.</li>' +
+    '</ul></div>' +
+    '</section></div>'
+  );
+}
+
 function drawMap() {
   map?.render({
-    point: state.point,
-    angle: state.angle,
+    ...state,
+    notes: [],
     mode: ui.mode,
-    layers: ui.layers,
-    notes: state.notes,
-    selectedNote: ui.selectedNote
+    layers: ui.view === 'plan' ? ui.planLayers : ui.layers,
+    selectedNote: null,
+    lens: ui.lens,
+    receptorId: ui.receptorId
   });
   $('modebar').hidden = ui.mode === 'explore';
   if (ui.mode !== 'explore')
     $('modebar').innerHTML =
-      '<b>' +
-      (ui.mode === 'note' ? 'Choose a place for your note' : 'Choose a footprint location') +
-      '</b><div class="mode-actions"><button data-act="center">Use map center</button><button data-act="cancel-mode">Cancel</button></div>';
+      '<b>Choose a site for the facility</b><div class="mode-actions"><button data-act="center">Use view center</button><button data-act="cancel-mode">Cancel</button></div>';
 }
 function render() {
-  renderPanel();
+  sentiment?.showNotes(state.notes);
+  renderControls();
   renderMetrics();
   drawMap();
 }
 function setMode(mode) {
-  ui.mode = mode;
+  if (dialog.open) closeDialog();
+  if (ui.view === 'sentiment') {
+    sentiment?.setNote(mode === 'note');
+    return;
+  }
+  ui.mode = mode === 'note' ? 'explore' : mode;
   $('layers-menu').hidden = true;
   $('layers').setAttribute('aria-expanded', 'false');
-  if (mode !== 'explore') setDrawer(false);
+  if (ui.mode !== 'explore' && ui.view === 'studio') map?.view('district');
   drawMap();
 }
+function viewControls() {
+  $('zin').disabled = false;
+  $('zout').disabled = false;
+  const listening = ui.view === 'sentiment';
+  document.body.dataset.workspace = listening ? 'sentiment' : 'scenario';
+  document
+    .querySelectorAll('[data-workview]')
+    .forEach((b) =>
+      b.setAttribute('aria-pressed', b.dataset.workview === (listening ? 'sentiment' : 'studio'))
+    );
+  $('workspace-title').textContent = listening
+    ? 'Sentiment map · College Station, Texas'
+    : 'Scenario Editor · College Station, Texas';
+  document.querySelector('.workbench').hidden = listening;
+  document.querySelector('.analysis').hidden = listening;
+  $('sentiment').hidden = !listening;
+  document.querySelector('.cam-modes').hidden = listening;
+  document.querySelector('.aerial-modes').hidden = ui.view !== 'plan';
+  $('map').hidden = ui.view !== 'plan';
+  $('scene').hidden = ui.view !== 'studio';
+  if (listening) hideOptionPopover();
+}
+function closeEditorOnSmallScreen() {
+  if (!matchMedia('(max-width:700px)').matches) return;
+  $('editor-toggle').setAttribute('aria-expanded', 'false');
+  $('editor-content').hidden = true;
+}
+function setCamera(view) {
+  ui.camera = view;
+  $('editor-current').textContent = {
+    building: 'Building design',
+    site: 'Site layout',
+    district: 'Neighborhood',
+    plan: 'Map overview'
+  }[view];
+  $('editor-toggle').setAttribute('aria-label', 'Views and placement: ' + $('editor-current').textContent);
+  $('stage').dataset.camera = view;
+  renderMetrics();
+  document
+    .querySelectorAll('[data-camera]')
+    .forEach((b) => b.setAttribute('aria-pressed', b.dataset.camera === view));
+}
+function aerialMap() {
+  return (aerial ??= createMap($('map'), {
+    onZoomChange: ({ canIn, canOut }) => {
+      if (ui.view === 'plan') {
+        $('zin').disabled = !canIn;
+        $('zout').disabled = !canOut;
+      }
+    },
+    onPlace: placeAt,
+    onPreview: renderMetrics,
+    onMoveEnd: (c) => {
+      if (ui.view === 'plan') mapCenter = c;
+    }
+  }));
+}
+function changeView(view) {
+  if (view === 'sentiment') {
+    studio?.setDemo(false);
+    ui.view = view;
+    ui.mode = 'explore';
+    viewControls();
+    map = undefined;
+    sentiment ??= createSentiment($('sentiment'), {
+      onNote: addNoteAt,
+      onMarker: showNote,
+      onRestoreNote: (noteId) => restore(state.notes.find((n) => n.id === noteId)),
+      onDemoChange: syncDemoButton,
+      onExplore: (point, zoneId) => {
+        const receptor = {
+          langford: 'langford',
+          independence: 'independence',
+          'pebble-creek': 'pebble-creek',
+          school: 'pebble-elem',
+          medical: 'medical',
+          midtown: 'langford',
+          fitch: 'pebble-creek',
+          tamu: 'midtown-reserve'
+        }[zoneId];
+        if (receptor) ui.receptorId = receptor;
+        ui.lens = zoneId === 'fitch' ? 'water' : zoneId === 'midtown' ? 'parcel' : 'sound';
+        changeView('studio');
+        drawMap();
+        renderMetrics();
+        if (ui.view === 'studio') studio.view('district');
+        else focusPoint(point);
+      }
+    });
+    sentiment.showNotes(state.notes);
+    sentiment.resize();
+    sentiment.resetIdle();
+    syncDemoButton();
+    return;
+  }
+  sentiment?.setDemo(false);
+  sentiment?.setNote(false);
+  if (view === 'studio' && (!studio || unavailable || (state.point && !sceneContains(state.point))))
+    view = 'plan';
+  const changed = view !== ui.view;
+  ui.view = view;
+  ui.mode = 'explore';
+  viewControls();
+  if (view === 'plan') {
+    studio?.setDemo(false);
+    $('loading').hidden = true;
+    setCamera('plan');
+  } else {
+    studio?.resetIdle();
+  }
+  map = view === 'studio' ? studio : aerialMap();
+  map?.resize();
+  drawMap();
+  if (changed && state.point) {
+    map?.focus(state.point);
+  } else if (changed) {
+    map?.home();
+  }
+  $('layers-menu').hidden = true;
+  $('layers').setAttribute('aria-expanded', 'false');
+  syncDemoButton();
+}
+function focusPoint(point) {
+  if (ui.view === 'sentiment') {
+    sentiment?.focus(point);
+    return;
+  }
+  if (ui.view === 'studio' && !sceneContains(point)) changeView('plan', false);
+  map?.focus(point);
+}
+
+function rotateAt(angle) {
+  if (!state.point) return;
+  state.angle = normalizeBearing(angle);
+  state.active = 'custom';
+  store();
+  render();
+}
+
 function placeAt(point) {
   if (!isStudyPoint(point)) {
     drawMap();
     renderMetrics();
-    toast('Choose a point inside the Allen Park study area.');
+    toast('Choose a point inside the College Station study area.');
     return;
   }
   state.active = 'custom';
@@ -382,6 +628,7 @@ function placeAt(point) {
   store();
   render();
 }
+
 function choose(key) {
   remember();
   ui.mode = 'explore';
@@ -389,21 +636,48 @@ function choose(key) {
     if (previousCustom) Object.assign(state, previousCustom, { active: 'custom' });
     else Object.assign(state, { active: 'custom', point: state.point || [...site.center] });
     ui.mode = 'place';
-    setDrawer(false);
-  } else if (key === 'none')
-    Object.assign(state, { active: 'none', point: null, angle: 0, design: 'reference' });
-  else if (key === 'proposal')
-    Object.assign(state, { active: key, point: [...site.center], angle: 0, design: 'reference' });
-  else {
+  } else if (key === 'none') {
+    Object.assign(state, {
+      active: 'none',
+      point: null,
+      angle: 0,
+      integration: 'd1',
+      cooling: 't1',
+      energy: 'e1',
+      benefits: []
+    });
+  } else if (Object.hasOwn(presetScenarios, key)) {
+    const p = presetScenarios[key];
+    Object.assign(state, {
+      active: key,
+      point: [...p.point],
+      angle: p.angle,
+      integration: p.integration,
+      cooling: p.cooling,
+      energy: p.energy,
+      benefits: [...p.benefits]
+    });
+  } else {
     const s = state.scenarios.find((s) => s.id === key);
     if (!s) return;
-    Object.assign(state, { active: s.id, point: [...s.point], angle: s.angle, design: s.design });
+    Object.assign(state, {
+      active: s.id,
+      point: [...s.point],
+      angle: s.angle,
+      integration: s.integration,
+      cooling: s.cooling,
+      energy: s.energy,
+      benefits: [...(s.benefits || [])]
+    });
   }
-  if (state.point && key !== 'custom') map.focus(state.point);
+  if (state.point && key !== 'custom') focusPoint(state.point);
+  if (key === 'custom' && ui.view === 'studio') map?.view('district');
   store();
   render();
 }
+
 function showDialog(title, html, large = false) {
+  hideOptionPopover();
   $('dialog-title').textContent = title;
   $('dialog-body').innerHTML = html;
   dialog.classList.toggle('large', large);
@@ -411,26 +685,24 @@ function showDialog(title, html, large = false) {
 }
 function closeDialog() {
   dialog.close();
-  imported = null;
 }
+
 function addNoteAt(point) {
   if (!isStudyPoint(point)) {
-    toast('Choose a point inside the Allen Park study area.');
+    toast('Choose a point inside the College Station study area.');
     return;
   }
   if (state.notes.length >= WORKSHOP_LIMITS.notes) {
-    toast('This workshop has reached its note limit.');
+    toast('This session has reached its note limit.');
     return;
   }
-  ui.mode = 'explore';
-  drawMap();
   showDialog(
-    'Add a community note',
-    '<form id="note-form"><p class="hint">Pinned on the map · ' +
+    'Add a discussion note',
+    '<form id="note-form"><p class="hint">Pinned on the College Station sentiment map · ' +
       escapeHTML(scenarioName()) +
       '</p><label class="field">Topic<select name="topic">' +
       topics.map((t) => '<option>' + t + '</option>').join('') +
-      '</select></label><label class="field">Your note<textarea name="text" required maxlength="1200" placeholder="What should others know about this place?"></textarea></label><p class="minor">Saved on this device with the current footprint and design.</p><div class="dialog-actions"><button type="button" data-act="close">Cancel</button><button class="primary" type="submit">Save note</button></div></form>'
+      '</select></label><label class="field">Your note<textarea name="text" required maxlength="1200" placeholder="Share a question, concern, or suggestion at this location…"></textarea></label><p class="minor">Saved only in this browser, separate from the fictional sample remarks.</p><div class="dialog-actions"><button type="button" data-act="close">Cancel</button><button class="primary" type="submit">Save note</button></div></form>'
   );
   const form = $('note-form');
   form.elements.text.focus();
@@ -452,23 +724,19 @@ function addNoteAt(point) {
       createdAt: new Date().toISOString()
     };
     state.notes.push(n);
-    ui.layers.notes = true;
     ui.selectedNote = n.id;
     store();
     closeDialog();
-    showTab('notes');
-    render();
-    toast('Note saved at this place.');
+    sentiment?.showNotes(state.notes, true);
+    toast('Note pinned to the College Station map.');
   };
 }
+
 function showNote(noteId) {
   const n = state.notes.find((x) => x.id === noteId);
   if (!n) return;
   ui.selectedNote = n.id;
-  ui.mode = 'explore';
-  setDrawer(false);
-  map.focus([n.lat, n.lng]);
-  drawMap();
+  focusPoint([n.lat, n.lng]);
   showDialog(
     n.topic,
     '<p class="note-full">' +
@@ -479,159 +747,12 @@ function showNote(noteId) {
       escapeHTML(new Date(n.createdAt).toLocaleDateString()) +
       '</p><div class="dialog-actions">' +
       (n.placement
-        ? '<button data-restore="' +
-          escapeHTML(n.id) +
-          '">' +
-          icon('footprint') +
-          'View attached placement</button>'
+        ? '<button data-restore="' + escapeHTML(n.id) + '">' + icon('footprint') + 'Open scenario</button>'
         : '') +
       '<button data-act="close">Done</button></div>'
   );
 }
-function saveOption() {
-  if (!state.point) return;
-  if (state.scenarios.length >= WORKSHOP_LIMITS.scenarios) {
-    toast('This workshop has reached its saved placement limit.');
-    return;
-  }
-  showDialog(
-    'Save a siting option',
-    '<form id="save-form"><label class="field">Name this placement<input required maxlength="80" name="name" placeholder="e.g. West industrial parcel"></label><p class="hint">Keep its location, rotation and facility design for comparison.</p><div class="dialog-actions"><button type="button" data-act="close">Cancel</button><button class="primary">Save option</button></div></form>'
-  );
-  const form = $('save-form');
-  form.elements.name.focus();
-  form.onsubmit = (e) => {
-    e.preventDefault();
-    const name = form.elements.name.value.trim();
-    if (!name) return;
-    const s = { id: id(), name, ...snapshot() };
-    state.scenarios.push(s);
-    state.active = s.id;
-    store();
-    closeDialog();
-    render();
-    toast('Siting option saved.');
-  };
-}
-function compare() {
-  const options = [
-    { name: 'Proposed site', point: site.center, design: 'reference' },
-    { name: 'No build', point: null, design: 'reference' },
-    ...state.scenarios
-  ];
-  if (state.active === 'custom') options.push({ name: 'My placement', ...snapshot() });
-  showDialog(
-    'Compare siting options',
-    '<p class="hint">Distances are straight lines to the mapped reference points. Energy and cooling water are annual workshop estimates.</p><div class="scrolltable"><table><thead><tr><th>Option</th><th>Park</th><th>School</th><th>Senior housing</th><th>Electricity</th><th>Cooling water</th></tr></thead><tbody>' +
-      options
-        .map((o) => {
-          const metrics = measure(o.point, places),
-            d = designs[o.design];
-          return (
-            '<tr><td><b>' +
-            escapeHTML(o.name) +
-            '</b><small>' +
-            (o.point ? d.name : 'No facility') +
-            '</small></td>' +
-            fields
-              .map((k) => '<td>' + (metrics[k] ? distance(metrics[k].meters) + ' mi' : '—') + '</td>')
-              .join('') +
-            '<td>' +
-            (o.point ? d.energy : 0) +
-            ' GWh</td><td>' +
-            (o.point ? (d.water === null ? 'Unmodeled' : d.water + 'M gal') : '0 gal') +
-            '</td></tr>'
-          );
-        })
-        .join('') +
-      '</tbody></table></div><p class="minor">No build shows zero added resource use. Save more placements to include them here.</p>',
-    true
-  );
-}
-function fileBtn(action, glyph, title, desc) {
-  return (
-    '<button class="filechoice" data-act="' +
-    action +
-    '">' +
-    icon(glyph) +
-    '<span><b>' +
-    title +
-    '</b><small>' +
-    desc +
-    '</small></span></button>'
-  );
-}
-function files() {
-  showDialog(
-    'Workshop files',
-    '<p class="hint">Work on this device or exchange a snapshot with other participants.</p>' +
-      fileBtn(
-        'link',
-        'link',
-        'Copy placement link',
-        'Share this location, orientation and design only.'
-      ) +
-      fileBtn(
-        'export',
-        'download',
-        'Export workshop',
-        'Download all saved options and community notes.'
-      ) +
-      fileBtn(
-        'import',
-        'folder',
-        'Open workshop file',
-        'Preview a workshop before replacing this one.'
-      ) +
-      '<input id="import-input" type="file" accept=".json,application/json" hidden><p id="file-error" class="error" role="status"></p>'
-  );
-  $('import-input').onchange = async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    try {
-      if (f.size > 6000000) throw Error('Choose a workshop file smaller than 6 MB.');
-      imported = parseWorkshop(await f.text());
-      showDialog(
-        'Open this workshop?',
-        '<p class="hint"><strong>' +
-          escapeHTML(f.name) +
-          '</strong> contains ' +
-          imported.scenarios.length +
-          ' saved options and ' +
-          imported.notes.length +
-          ' notes. Opening it replaces the current workshop on this device.</p><div class="dialog-actions"><button data-act="files">Cancel</button><button class="primary" data-act="confirm-import">Open workshop</button></div>'
-      );
-    } catch (err) {
-      $('file-error').textContent = err.message;
-    }
-  };
-}
-function download() {
-  const a = document.createElement('a'),
-    blob = new Blob([serializeWorkshop(state)], { type: 'application/json' });
-  a.href = URL.createObjectURL(blob);
-  a.download = 'Allen-Park-' + new Date().toISOString().slice(0, 10) + '.workshop.json';
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  toast('Workshop exported.');
-}
-async function copyLink() {
-  const url = addressLink();
-  try {
-    await navigator.clipboard.writeText(url);
-    toast('Placement link copied.');
-    closeDialog();
-  } catch {
-    showDialog(
-      'Copy placement link',
-      '<label class="field">Placement link<input id="share-url" readonly></label><p class="minor">This preview link opens on devices that can reach the same site address.</p>'
-    );
-    $('share-url').value = url;
-    $('share-url').select();
-  }
-}
+
 function toggleLayerMenu() {
   const menu = $('layers-menu'),
     opening = menu.hidden;
@@ -639,23 +760,26 @@ function toggleLayerMenu() {
   $('layers').setAttribute('aria-expanded', opening);
   if (opening)
     menu.innerHTML = Object.entries({
-      site: 'Proposed parcel',
-      river: 'Ecorse River',
-      places: 'Community places',
-      notes: 'Workshop notes'
+      sound: 'Equipment sound field',
+      constraints: 'Roads & CUP exclusions',
+      environment: 'FEMA / NWI / PAD-US',
+      site: 'Midtown study tract',
+      river: 'Lick Creek tributary',
+      places: 'Sensitive receptors'
     })
       .map(
         ([k, label]) =>
           '<label><input type="checkbox" data-layer="' +
           k +
           '" ' +
-          (ui.layers[k] ? 'checked' : '') +
+          ((ui.view === 'plan' ? ui.planLayers : ui.layers)[k] ? 'checked' : '') +
           '>' +
           label +
           '</label>'
       )
       .join('');
 }
+
 function toggleFull() {
   if (document.fullscreenElement)
     document.exitFullscreen().catch(() => toast('Full screen is unavailable.'));
@@ -663,194 +787,345 @@ function toggleFull() {
     document.documentElement.requestFullscreen().catch(() => toast('Full screen is unavailable.'));
   else toast('Full screen is unavailable in this browser.');
 }
+
+function activeDemo() {
+  if (ui.view === 'sentiment') return Boolean(sentiment?.isDemo?.());
+  if (ui.view === 'studio') return Boolean(studio?.isDemo?.());
+  return false;
+}
+
+function syncDemoButton() {
+  const btn = $('demo');
+  if (!btn) return;
+  const playing = activeDemo();
+  btn.setAttribute('aria-pressed', String(playing));
+  btn.setAttribute('aria-label', playing ? 'Pause demo' : 'Play demo');
+  btn.title = playing ? 'Pause demo' : 'Play demo';
+  btn.innerHTML = icon(playing ? 'pause' : 'play');
+}
+
+function toggleDemo() {
+  if (dialog.open) closeDialog();
+  hideOptionPopover();
+  if (ui.view === 'sentiment') {
+    if (!sentiment) return;
+    if (sentiment.isDemo()) {
+      sentiment.setDemo(false);
+    } else if (!sentiment.setDemo(true, { source: 'manual' })) {
+      toast('No matching comments to tour — reset filters first.');
+    }
+    syncDemoButton();
+    return;
+  }
+  if (ui.view === 'plan') {
+    if (!studio || unavailable) {
+      toast('3D scenario demo requires WebGL in this browser.');
+      return;
+    }
+    changeView('studio');
+    if (ui.view === 'studio') studio.setDemo(true, { source: 'manual' });
+    syncDemoButton();
+    return;
+  }
+  if (studio) {
+    studio.setDemo(!studio.isDemo(), { source: 'manual' });
+    syncDemoButton();
+  }
+}
+
 const actions = {
-  'add-note': () => setMode('note'),
-  move: () => setMode('place'),
-  save: saveOption,
-  files,
   'cancel-mode': () => setMode('explore'),
   center: () => {
-    if (ui.mode === 'note') addNoteAt(mapCenter);
-    else if (ui.mode === 'place') placeAt(mapCenter);
+    if (ui.mode === 'place') placeAt(mapCenter);
   },
-  close: closeDialog,
-  link: copyLink,
-  export: download,
-  import: () => $('import-input').click(),
-  'confirm-import': () => {
-    if (!imported) return;
-    Object.assign(state, imported);
-    previousCustom = null;
-    ui.mode = 'explore';
-    ui.selectedNote = null;
-    store(true);
-    closeDialog();
-    render();
-    if (state.point) map.focus(state.point);
-    else map.home();
-    toast('Workshop opened.');
-  }
+  close: closeDialog
 };
+
 function restore(n) {
   const attached = n?.placement;
   if (!attached) return;
+  if (ui.view === 'sentiment') changeView('studio');
   Object.assign(state, {
     ...attached,
     point: attached.point && [...attached.point],
+    benefits: [...(attached.benefits || [])],
     active: attached.point ? 'custom' : 'none'
   });
   store();
   closeDialog();
-  showTab('siting');
   render();
-  if (state.point) map.focus(state.point);
+  if (state.point) focusPoint(state.point);
 }
-function nudge(direction) {
-  if (!state.point) return;
-  const [lat, lng] = state.point,
-    meters = 15.24;
-  const dy = meters / 111320,
-    dx = dy / Math.cos((lat * Math.PI) / 180);
-  const offset = { North: [dy, 0], South: [-dy, 0], West: [0, -dx], East: [0, dx] }[direction];
-  placeAt([lat + offset[0], lng + offset[1]]);
-  map.focus(state.point);
-  panel.querySelector('[data-nudge="' + direction + '"]')?.focus({ preventScroll: true });
-}
+
+// Hover, focus & click-pin triggers for clean option info popover
+document.addEventListener('pointerover', (e) => {
+  const infoBtn = e.target.closest('.opt-info');
+  if (infoBtn && !popoverPinned) showOptionPopover(infoBtn);
+});
+document.addEventListener('pointerout', (e) => {
+  const infoBtn = e.target.closest('.opt-info');
+  if (infoBtn && !popoverPinned && !e.relatedTarget?.closest('.opt-info, #option-popover')) hideOptionPopover();
+});
+document.addEventListener('focusin', (e) => {
+  const infoBtn = e.target.closest('.opt-info');
+  if (infoBtn && !popoverPinned) showOptionPopover(infoBtn);
+});
+document.addEventListener('focusout', (e) => {
+  if (e.target.closest('.opt-info') && !popoverPinned) hideOptionPopover();
+});
+
 document.addEventListener('click', (e) => {
+  if (!$('layers-menu').hidden && !e.target.closest('#layers, #layers-menu')) toggleLayerMenu();
+  if (popoverAnchor && !e.target.closest('.opt-info, #option-popover')) hideOptionPopover();
   const b = e.target.closest('button');
-  if (!b) {
-    if (!$('layers-menu').hidden && !e.target.closest('.layer-wrap')) toggleLayerMenu();
+  if (!b) return;
+  if (b.classList.contains('opt-info')) {
+    if (popoverPinned && popoverAnchor === b && !$('option-popover').hidden) hideOptionPopover();
+    else showOptionPopover(b, { pin: true });
     return;
   }
-  if (!$('layers-menu').hidden && !e.target.closest('.layer-wrap')) toggleLayerMenu();
   if (b.dataset.act) {
     actions[b.dataset.act]?.();
     return;
   }
-  if (b.dataset.tab) {
-    showTab(b.dataset.tab);
+  if (b.dataset.workview) {
+    changeView(b.dataset.workview);
     return;
   }
-  if (b.dataset.choice) {
-    choose(b.dataset.choice);
+  if (b.dataset.presetJump) {
+    if (dialog.open) closeDialog();
+    choose(b.dataset.presetJump);
     return;
   }
-  if (b.dataset.note) {
-    showNote(b.dataset.note);
+  if (b.dataset.pillar) {
+    if (!noBuild()) {
+      ui.pillar = b.dataset.pillar;
+      renderControls();
+    }
+    return;
+  }
+  if (b.dataset.option && b.dataset.optionPillar) {
+    if (noBuild()) return;
+    const pillar = b.dataset.optionPillar;
+    const opt = b.dataset.option;
+    if (pillar === 'benefits') {
+      const next = new Set(state.benefits || []);
+      if (next.has(opt)) next.delete(opt);
+      else next.add(opt);
+      state.benefits = [...next].sort();
+    } else if (Object.hasOwn(pillarMeta[pillar]?.specs || {}, opt)) {
+      state[pillar] = opt;
+    }
+    state.active = 'custom';
+    store();
+    render();
+    return;
+  }
+  if (b.dataset.domain) {
+    ui.domain = b.dataset.domain;
+    renderControls();
+    renderMetrics();
+    return;
+  }
+  if (b.id === 'design-toggle' || b.id === 'context-toggle' || b.id === 'editor-toggle') {
+    const open = b.getAttribute('aria-expanded') !== 'true';
+    b.setAttribute('aria-expanded', open);
+    $(b.getAttribute('aria-controls')).hidden = !open;
+    if (b.id === 'context-toggle' && open) renderMetrics();
+    hideOptionPopover();
+    return;
+  }
+  if (b.id === 'siting-check') {
+    const report = evaluateConstraints(state);
+    const finding = report.items
+      .map(
+        (item) =>
+          '<section class="method"><h3>' +
+          escapeHTML(item.title) +
+          '</h3><p>' +
+          escapeHTML(item.detail) +
+          '</p></section>'
+      )
+      .join('');
+    showDialog(
+      'CUP placement check',
+      finding +
+        '<p class="hint">Screens the rotated footprint against OpenStreetMap-aligned SH 6, Lakeway Drive, William D. Fitch Pkwy, neighborhood streets, Lick Creek, Spring Creek, parks, The Langford, existing buildings, and live federal overlays.</p><div class="nudge-row"><button data-example="creek">Try Lick Creek edge</button><button data-example="lakeway">Try Lakeway Dr edge</button></div>'
+    );
+    return;
+  }
+  if (b.dataset.example) {
+    const examples = { creek: [30.57541, -96.26385], lakeway: [30.57085, -96.26497] };
+    const p = examples[b.dataset.example];
+    if (!p) return;
+    closeDialog();
+    state.angle = 0;
+    placeAt(p);
+    changeView('studio');
+    focusPoint(p);
+    return;
+  }
+  if (b.dataset.camera) {
+    closeEditorOnSmallScreen();
+    if (b.dataset.camera === 'plan') {
+      changeView('plan');
+      map?.home();
+    } else {
+      changeView('studio');
+      if (ui.view === 'studio') studio?.view(b.dataset.camera);
+    }
+    return;
+  }
+  if (b.dataset.method) {
+    showDialog('Model assumptions & limits', methodsHTML(b.dataset.method));
     return;
   }
   if (b.dataset.restore) {
     restore(state.notes.find((n) => n.id === b.dataset.restore));
     return;
   }
-  if (b.dataset.nudge) {
-    nudge(b.dataset.nudge);
-    return;
-  }
   const top = {
-    files,
     full: toggleFull,
-    compare,
-    'add-note': actions['add-note'],
+    demo: toggleDemo,
+    evidence: () => showDialog('College Station case evidence & guardrails', evidencePanel(), true),
+    methods: () => showDialog('Model assumptions & scope limits', methodsHTML(), true),
     layers: toggleLayerMenu,
-    home: () => map.home(),
-    zin: () => map.zoomBy(1),
-    zout: () => map.zoomBy(-1),
-    'open-drawer': () => setDrawer(true),
-    'close-drawer': () => setDrawer(false),
-    scrim: () => setDrawer(false),
+    'retry-environment': () => loadEnvironmentalLayers({ retry: true }),
+    'context-info': () =>
+      showDialog(
+        'CUP siting constraints',
+        '<p>Red marks identify intersections with SH 6, William D. Fitch Pkwy, Rock Prairie Rd E, Midtown Drive, residential streets, or the Lick Creek tributary. Amber marks flag Texas Independence Park, The Langford Assisted Living, existing corridor buildings, or federal environmental review overlays.</p><p>Pre-application screening is not a buildability permit. Verify UDO Business Park / Industrial CUP rules, surveyed easements, and BVGCD/FEMA requirements with the City of College Station.</p>' +
+          environmentalSources
+            .map(
+              (s) =>
+                '<div class="ref"><h3>' +
+                escapeHTML(s.label) +
+                '</h3><p>' +
+                escapeHTML(s.detail) +
+                '</p><a href="' +
+                s.source +
+                '" target="_blank" rel="noopener">Source information</a></div>'
+            )
+            .join('')
+      ),
+    home: () => map?.home(),
+    zin: () => map?.zoomBy(1),
+    zout: () => map?.zoomBy(-1),
     'dialog-close': closeDialog
   };
   if (Object.hasOwn(top, b.id)) top[b.id]();
 });
+
 document.addEventListener('change', (e) => {
   const t = e.target;
   if (t.dataset.layer) {
-    ui.layers[t.dataset.layer] = t.checked;
+    (ui.view === 'plan' ? ui.planLayers : ui.layers)[t.dataset.layer] = t.checked;
     drawMap();
     renderMetrics();
     return;
   }
   if (t.id === 'base') {
-    map.setBase(t.value);
+    aerial?.setBase(t.value);
     return;
   }
-  if (t.id === 'design' && Object.hasOwn(designs, t.value)) {
-    state.design = t.value;
-    state.active = 'custom';
-    store();
-    render();
-    panel.querySelector('#design')?.focus({ preventScroll: true });
-    toast('Facility design updated.');
+  if (t.id === 'placement') {
+    choose(t.value);
+    closeEditorOnSmallScreen();
     return;
   }
-  if (t.id === 'angle') {
-    store();
-    render();
-    panel.querySelector('#angle')?.focus({ preventScroll: true });
-  }
-});
-document.addEventListener('input', (e) => {
-  if (e.target.id === 'angle') {
-    state.angle = Number(e.target.value);
-    state.active = 'custom';
-    $('degrees').textContent = state.angle + '°';
+  if (t.id === 'receiver') {
+    ui.receptorId = t.value;
+    renderMetrics();
     drawMap();
+    return;
   }
 });
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !dialog.open) {
+    hideOptionPopover();
+    studio?.setDemo(false);
+    sentiment?.setDemo(false);
+    sentiment?.setNote(false);
     if (!$('layers-menu').hidden) toggleLayerMenu();
     if (ui.mode !== 'explore') setMode('explore');
-    if ($('sidebar').classList.contains('open')) setDrawer(false);
   }
 });
 document.addEventListener('fullscreenchange', () => {
-  $('full').setAttribute(
-    'aria-label',
-    document.fullscreenElement ? 'Exit full screen' : 'Enter full screen'
-  );
-  map.resize();
+  const isFull = Boolean(document.fullscreenElement);
+  const fullBtn = $('full');
+  fullBtn.setAttribute('aria-pressed', String(isFull));
+  fullBtn.setAttribute('aria-label', isFull ? 'Exit full screen' : 'Enter full screen');
+  fullBtn.title = isFull ? 'Exit full screen' : 'Full screen';
+  fullBtn.innerHTML = icon(isFull ? 'compress' : 'expand');
+  map?.resize();
+  sentiment?.resize(false);
 });
-matchMedia('(max-width:760px)').addEventListener('change', () => {
-  setDrawer(false);
-  map.resize();
-});
-dialog.addEventListener('close', () => {
-  imported = null;
+matchMedia('(max-width:700px)').addEventListener('change', () => {
+  map?.resize();
+  if (ui.view === 'plan') aerial?.home();
+  sentiment?.resize(true);
 });
 window.addEventListener('storage', (e) => {
-  if (dialog.open || ui.mode !== 'explore' || !e.key?.startsWith('datascope:workshop:')) return;
+  if (dialog.open || ui.mode !== 'explore' || !e.key?.startsWith('datascope:college-station:')) return;
   Object.assign(state, loadWorkspace(site.center));
+  if (ui.view === 'studio' && state.point && !sceneContains(state.point)) changeView('plan', false);
   render();
 });
-hydrateIcons();
-const linked = readLink();
-if (location.hash.startsWith('#view=placement'))
-  history.replaceState(null, '', location.pathname + location.search);
-map = createMap($('map'), {
-  onPlace: placeAt,
-  onNote: addNoteAt,
-  onMarker: showNote,
-  onPreview: renderMetrics,
-  onMoveEnd: (c) => {
-    mapCenter = c;
+
+let ready = true;
+try {
+  ready = window.self === window.top;
+} catch {
+  ready = false;
+}
+
+if (ready) {
+  hydrateIcons();
+  if (matchMedia('(max-width:700px)').matches)
+    for (const name of ['design', 'context', 'editor']) {
+      $(name + '-toggle').setAttribute('aria-expanded', 'false');
+      $(name + '-content').hidden = true;
+    }
+
+  function fallback() {
+    if (unavailable) return;
+    unavailable = true;
+    $('loading').hidden = true;
+    if (ui.view !== 'sentiment') changeView('plan', false);
+    if (ui.view !== 'sentiment')
+      toast('Using the map overview for this browser. Drag the footprint to test a College Station placement.');
   }
-});
-render();
-if (linked) {
-  store();
-  if (state.point) map.focus(state.point);
-  toast('Shared placement opened.');
-} else if (state.point && state.active !== 'proposal') map.focus(state.point);
-window.addEventListener('hashchange', () => {
-  if (!readLink()) return;
-  history.replaceState(null, '', location.pathname + location.search);
-  ui.mode = 'explore';
-  ui.selectedNote = null;
-  store();
+  onEnvironmentChange(() => {
+    renderMetrics();
+    drawMap();
+  });
+  void loadEnvironmentalLayers();
   render();
-  if (state.point) map.focus(state.point);
-  else map.home();
-  toast('Shared placement opened.');
-});
+  try {
+    const module = await import('./studio/scene.js');
+    sceneContains = module.sceneContains;
+    studio = module.makeScene($('scene'), {
+      onPlace: placeAt,
+      onRotate: rotateAt,
+      onRotatePreview: (angle) => renderMetrics(state.point, angle),
+      onPreview: renderMetrics,
+      onCenter: (c) => {
+        if (ui.view === 'studio') mapCenter = c;
+      },
+      onView: setCamera,
+      onDemoChange: syncDemoButton,
+      onReady: () => {
+        $('loading').hidden = true;
+      },
+      onError: fallback
+    });
+    if (!unavailable && ui.view !== 'sentiment')
+      changeView(state.point && !sceneContains(state.point) ? 'plan' : ui.view, false);
+  } catch (error) {
+    console.error('DataScope 3D', error);
+    fallback();
+  }
+  if (new URLSearchParams(location.search).get('view') === 'sentiment') changeView('sentiment');
+  if (state.point && state.active !== 'conventional' && ui.view !== 'sentiment') focusPoint(state.point);
+}

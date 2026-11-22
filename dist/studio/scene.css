@@ -1,0 +1,222 @@
+.ds-studio {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: #dce9e6;
+}
+.ds-studio-canvas,
+.ds-studio-labels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.ds-studio-canvas {
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+}
+.ds-studio-canvas:focus-visible {
+  outline: 2px solid #9fe1e0;
+  outline-offset: -3px;
+}
+.ds-studio[data-mode='place'] .ds-studio-canvas,
+.ds-studio[data-mode='note'] .ds-studio-canvas {
+  cursor: crosshair;
+}
+.ds-studio-canvas.ds-on-facility {
+  cursor: grab;
+}
+.ds-studio.ds-dragging .ds-studio-canvas,
+.ds-studio-canvas:active {
+  cursor: grabbing;
+}
+.ds-studio-labels {
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+.ds-scene-tag {
+  position: absolute;
+  white-space: nowrap;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font:
+    600 11px/1.2 Helvetica,
+    sans-serif;
+  color: #243d3a;
+  background: #f8faf8eb;
+  padding: 4px 7px;
+  border: 1px solid #b7cbc0;
+  border-radius: 2px;
+  text-shadow: none;
+  box-shadow: 0 1px 2px #384d4829;
+}
+.ds-scene-tag[hidden] {
+  display: none !important;
+}
+.ds-scene-tag.park {
+  color: #315641;
+}
+.ds-scene-tag.school {
+  color: #2e5366;
+}
+.ds-scene-tag.housing {
+  color: #704d32;
+}
+.ds-scene-tag.senior {
+  color: #7a4b39;
+}
+.ds-scene-tag.medical {
+  color: #823838;
+}
+.ds-scene-tag.river,
+.ds-scene-tag.street {
+  color: #365d61;
+  font-size: 10px;
+  padding: 2px 4px;
+  box-shadow: none;
+  font-weight: 600;
+  background: #f8faf8de;
+  border: 0;
+}
+.ds-scene-tag.street {
+  color: #4c5a50;
+  background: #f8faf8de;
+}
+.ds-scene-tag.facility {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.12px;
+  border-color: #365856;
+  color: #f8faf8;
+  background: #254545f1;
+  padding: 5px 8px;
+  box-shadow: 0 3px 9px #00131235;
+}
+.ds-scene-tag.facility::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background: #93d9c9;
+  border-radius: 50%;
+}
+.ds-scene-tag.facility::after {
+  content: '';
+  height: 31px;
+  width: 1px;
+  transform-origin: top;
+  transform: rotate(-30deg);
+  background: #294547;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+}
+.ds-scene-tag.note {
+  pointer-events: auto;
+  cursor: pointer;
+  border-color: #c4a46b;
+  color: #886326;
+  background: #f5ead6;
+}
+.ds-scene-tag.note.selected {
+  outline: 1px solid #886326;
+}
+@media (max-width: 640px) {
+  .ds-scene-tag {
+    font-size: 10px;
+  }
+  .ds-scene-tag.facility {
+    font-size: 11px;
+  }
+}
+
+.ds-scene-tag.contour {
+  background: #fbf2f5eb;
+  border: 0;
+  box-shadow: none;
+  color: #704872;
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 5px;
+}
+
+.ds-scene-tag.ds-listening {
+  border-color: #9b7095;
+  color: #644664;
+  background: #f5eff7f2;
+}
+.ds-scene-tag.ds-listening::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  box-sizing: border-box;
+  border: 1px solid #905d89;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #ba92c633;
+}
+
+.ds-scene-tag.facility.conflict {
+  color: #fff6df;
+  background: #7b3329;
+  border-color: #e3996d;
+}
+.ds-scene-tag.facility.conflict::before {
+  background: #ffc993;
+}
+.ds-scene-tag.facility.conflict::after {
+  background: #7b3329;
+}
+.ds-machine-leaders {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.ds-machine-leaders polyline {
+  stroke: #f8faf8;
+  fill: none;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 1px 0 #4a5b55);
+}
+.ds-machine-leaders circle {
+  stroke: #294748;
+  fill: #f8faf8;
+  stroke-width: 1.4;
+}
+.ds-machine-tag {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 5px 7px;
+  color: #244046;
+  background: #f8faf8f5;
+  border: 1px solid #47625b;
+  font:
+    600 10px/1.12 Helvetica,
+    sans-serif;
+  box-shadow: 1px 2px 0 #29434026;
+}
+.ds-machine-tag[hidden] {
+  display: none;
+}
+@media (min-width: 640px) {
+  .ds-machine-tag {
+    font-size: 11px;
+    padding: 6px 9px;
+  }
+}
+/* The rotation grip follows its 3D disc; it is never a toolbar action. */
+.ds-rotation-grip { position:absolute; z-index:3; width:27px; height:27px; transform:translate(-50%,-50%); display:grid; place-items:center; pointer-events:auto; cursor:grab; touch-action:none; color:#356f60; background:#f8fcf8f5; border:1px solid #7da899; border-radius:50%; box-shadow:0 2px 5px #24483a25; }
+.ds-rotation-grip .ico { width:15px; height:15px; }
+.ds-rotation-value { position:absolute; top:29px; left:50%; transform:translateX(-50%); color:#315c50; background:#f8fcf8eb; border-radius:4px; padding:2px 4px; font:10px/1 Helvetica,sans-serif; white-space:nowrap; }
+.ds-rotation-grip:focus-visible { outline:2px solid #356f60; outline-offset:3px; }
+.ds-turning .ds-rotation-grip,.ds-turning .ds-studio-canvas { cursor:grabbing; }
+.ds-turning .ds-rotation-grip { background:#d6ebe2; border-color:#356f60; }
+.ds-rotation-grip[hidden] { display:none; }

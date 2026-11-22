@@ -3,112 +3,139 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="color-scheme" content="dark" />
-    <title>DataScope · Allen Park community map</title>
+    <meta name="color-scheme" content="light" />
+    <script>(function(){var f=true;try{f=self!==top}catch(e){}if(f){document.documentElement.style.display='none';try{window.stop()}catch(e){}document.addEventListener('DOMContentLoaded',function(){document.head.innerHTML='';document.body.innerHTML='';document.documentElement.style.display='';});}})();</script>
+    <title>DataScope · College Station Scenario Editor</title>
     <meta
       name="description"
-      content="Explore and compare data center placements with your community in Allen Park, Michigan."
+      content="Explore College Station Midtown CUP siting, design integration, cooling, energy supply, and community benefit trade-offs on an interactive 3D tabletop and sentiment map."
     />
     <link rel="icon" href="assets/mark.svg" />
     <link rel="stylesheet" href="vendor/leaflet.css" />
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="map.css" />
+    <link rel="stylesheet" href="map.css?v=20261121-cs16" />
+    <link rel="stylesheet" href="studio/scene.css?v=20261121-cs16" />
+    <link rel="stylesheet" href="editorial.css" />
+    <link rel="stylesheet" href="floating.css?v=20261121-cs16" />
+    <script type="importmap">
+      { "imports": {
+        "three": "./studio/vendor/three.module.js",
+        "./icons.js": "./icons.js?v=20261121-cs16",
+        "./geography.js": "./geography.js?v=20261121-cs16",
+        "./environment.js": "./environment.js?v=20261121-cs16",
+        "./workshop.js": "./workshop.js?v=20261121-cs16",
+        "./map.js": "./map.js?v=20261121-cs16",
+        "./studio/model-data.js": "./studio/model-data.js?v=20261121-cs16",
+        "./studio/analysis.js": "./studio/analysis.js?v=20261121-cs16",
+        "./studio/constraints.js": "./studio/constraints.js?v=20261121-cs16",
+        "./studio/readouts.js": "./studio/readouts.js?v=20261121-cs16",
+        "./studio/physical.js": "./studio/physical.js?v=20261121-cs16",
+        "./studio/scene.js": "./studio/scene.js?v=20261121-cs16",
+        "./sentiment.js": "./sentiment.js?v=20261121-cs16",
+        "./sentiment-heat.js": "./sentiment-heat.js?v=20261121-cs16",
+        "./sentiment-field.js": "./sentiment-field.js?v=20261121-cs16",
+        "./sentiment-data.js": "./sentiment-data.js?v=20261121-cs16"
+      } }
+    </script>
     <script defer src="vendor/leaflet.js"></script>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=20261121-cs16"></script>
   </head>
   <body>
     <header class="topbar">
-      <a class="brand" href="./" aria-label="DataScope home"
-        ><img src="assets/mark.svg" alt="" />DataScope<span>.</span></a
-      >
-      <span class="product">Community workspace</span>
-      <div class="partners">
-        <img src="assets/city-science.svg" alt="MIT City Science" /><img
-          src="assets/mit-media-lab.svg"
-          alt="MIT Media Lab"
-        />
+      <a class="brand" href="./" aria-label="DataScope home">DataScope<span>.</span></a>
+      <div class="partners" aria-label="MIT research groups">
+        <a href="https://www.media.mit.edu/groups/city-science/overview/" target="_blank" rel="noopener" aria-label="MIT City Science" title="MIT City Science"><img src="assets/city-science.svg" alt="" /></a>
+        <a href="https://www.media.mit.edu/" target="_blank" rel="noopener" aria-label="MIT Media Lab" title="MIT Media Lab"><img src="assets/mit-media-lab.svg" alt="" /></a>
       </div>
+      <nav class="views" aria-label="Workspace view">
+        <button data-workview="studio" aria-pressed="true"><i data-icon="cube"></i>Scenario Editor</button
+        ><button data-workview="sentiment" aria-pressed="false">
+          <i data-icon="map"></i>Sentiment map
+        </button>
+      </nav>
       <div class="top-actions">
-        <button class="quiet" id="files"><i data-icon="share"></i><span>Workshop files</span></button
-        ><button class="icon-btn" id="full" aria-label="Enter full screen" title="Full screen">
-          <i data-icon="expand"></i></button
-        ><button class="primary" id="add-note"><i data-icon="pinplus"></i>Add note</button>
+        <button id="full" class="icon-btn" aria-pressed="false" aria-label="Enter full screen" title="Full screen">
+          <i data-icon="expand"></i>
+        </button>
+        <button id="demo" class="icon-btn" aria-pressed="false" aria-label="Play demo" title="Play demo">
+          <i data-icon="play"></i>
+        </button>
       </div>
     </header>
-    <main class="workspace">
-      <aside id="sidebar" class="sidebar" aria-label="Workshop tools" tabindex="-1">
-        <div class="site-head">
-          <div class="kicker"><i data-icon="loc"></i>Michigan, United States</div>
-          <div class="title-line">
-            <h1>Allen Park</h1>
-            <button class="icon-btn drawer-close" id="close-drawer" aria-label="Close workshop tools">
-              <i data-icon="close"></i>
-            </button>
-          </div>
-          <p>Data center siting workshop</p>
-        </div>
-        <nav class="tabs" aria-label="Workshop views">
-          <button data-tab="siting" aria-current="page"><i data-icon="footprint"></i>Siting</button
-          ><button data-tab="notes"><i data-icon="note"></i>Notes <span id="count">0</span></button
-          ><button data-tab="evidence"><i data-icon="book"></i>Evidence</button>
-        </nav>
-        <div id="panel" class="panel"></div>
-        <div class="sidefoot">
-          <span id="local-status"><b></b> Saved on this device</span
-          ><button id="compare"><i data-icon="compare"></i>Compare</button>
-        </div>
-      </aside>
-      <button id="scrim" hidden aria-label="Close workshop tools"></button>
-      <section class="map-area" aria-label="Interactive siting map">
-        <div class="map-wrap">
-          <div id="map" aria-label="Map of Allen Park and Melvindale"></div>
-          <div class="maptools">
-            <button
-              id="open-drawer"
-              class="map-btn mobile-tools"
-              aria-controls="sidebar"
-              aria-expanded="false"
-            >
-              <i data-icon="controls"></i>Workshop
-            </button>
-            <div class="layer-wrap">
-              <button id="layers" class="map-btn" aria-expanded="false" aria-controls="layers-menu">
-                <i data-icon="layers"></i><span>Layers</span>
-              </button>
-              <div hidden id="layers-menu" class="popover"></div>
+    <main>
+      <h1 class="sr-only" id="workspace-title">Scenario Editor · College Station, Texas</h1>
+      <div class="workbench">
+        <section class="stage" id="stage" aria-label="Interactive College Station Midtown model">
+          <div id="scene" aria-label="Three-dimensional Midtown neighborhood and movable data center"></div>
+          <div id="map" hidden aria-label="North-up map of College Station Midtown"></div>
+          <div id="loading"><i></i><span>Preparing College Station model…</span></div>
+          <aside class="editor-tools" aria-label="Scenario controls">
+            <button id="editor-toggle" class="panel-toggle" aria-expanded="true" aria-controls="editor-content"><span><i data-icon="controls"></i><span id="editor-current">Views &amp; placement</span></span><i data-icon="chevron"></i></button>
+            <div id="editor-content">
+              <label class="placement-select" title="Choose a starter scenario or Midtown alternative"><i data-icon="footprint"></i><select id="placement" aria-label="Active scenario"></select></label>
+              <div class="cam-modes editor-views" role="group" aria-label="View scale">
+                <button data-camera="building" aria-pressed="false" title="Inspect the building, energy system, and cooling plant in 3D"><i data-icon="inspect"></i><span>Building design</span></button>
+                <button data-camera="site" aria-pressed="true" title="Explore the Midtown Business Park site layout in 3D"><i data-icon="footprint"></i><span>Site layout</span></button>
+                <button data-camera="district" aria-pressed="false" title="Explore surrounding College Station corridors in 3D"><i data-icon="housing"></i><span>Neighborhood</span></button>
+                <button data-camera="plan" aria-pressed="false" title="Explore the north-up map and geographic constraints"><i data-icon="map"></i><span>Map overview</span></button>
+              </div>
+              <div class="editor-navigation"><span>Zoom</span><div class="zoom">
+                <button id="zout" aria-label="Zoom out">−</button><button id="zin" aria-label="Zoom in">+</button><button id="home" aria-label="Reset view" title="Reset view"><i data-icon="expand"></i></button>
+              </div></div>
+              <div class="editor-map-tools">
+                <label class="aerial-modes" hidden><select id="base" aria-label="Map background"><option value="map">Light map</option><option value="satellite">Satellite</option></select></label>
+                <div class="layer-wrap"><button id="layers" aria-expanded="false" aria-controls="layers-menu"><i data-icon="layers"></i>Layers</button></div>
+              </div><div hidden id="layers-menu" class="popover"></div>
+              <section class="siting-context" id="siting-context" aria-label="Siting constraints">
+                <div class="context-heading"><button class="panel-toggle" id="context-toggle" aria-expanded="false" aria-controls="context-content">CUP constraints<i data-icon="chevron"></i></button><button id="context-info" aria-label="About siting constraints">ⓘ</button></div>
+                <div id="context-content" hidden><div class="context-key"><span style="--key:#ae645b">SH 6 &amp; roads</span><span style="--key:#51866b">Parks &amp; greenbelt</span><span style="--key:#4a94a1">Wetlands</span><span style="--key:#8176ae">Flood hazards</span></div>
+                  <p id="context-finding"></p><div id="context-distances"></div><small id="environment-status">Loading environmental overlays…</small><button id="retry-environment" hidden>Retry unavailable overlays</button>
+                </div>
+              </section>
             </div>
-            <div class="base-wrap">
-              <label class="map-btn" for="base"
-                ><i data-icon="terrain"></i
-                ><select id="base">
-                  <option value="night">Night aerial</option>
-                  <option value="satellite">Satellite</option></select
-                ><i data-icon="chevron"></i
-              ></label>
-            </div>
-          </div>
-          <div class="nav-map">
-            <button class="compass" id="home" title="Fit study area" aria-label="Fit study area">
-              <b>N</b><i data-icon="north"></i>
-            </button>
-            <div>
-              <button id="zin" aria-label="Zoom in">+</button
-              ><button id="zout" aria-label="Zoom out">−</button>
-            </div>
-          </div>
-          <div id="parcel-context">
-            <i></i><span>Proposed parcel</span><small id="parcel-state"></small>
-          </div>
+          </aside>
           <div id="modebar" hidden></div>
-        </div>
-        <section class="readouts" aria-label="Distances to mapped community places">
-          <div class="readhead">
-            <h2><i data-icon="measure"></i>Nearby places</h2>
-            <span id="origin">From footprint center · straight line</span>
-          </div>
-          <div id="metrics" class="metrics"></div>
         </section>
+        <aside class="design-tray" aria-label="Scenario package options">
+          <button class="panel-toggle" id="design-toggle" aria-expanded="true" aria-controls="design-content"><span>Explore options</span><i data-icon="chevron"></i></button>
+          <div id="design-content">
+            <div class="pillar-tabs" role="tablist" aria-label="Four exploration areas">
+              <button type="button" role="tab" data-pillar="integration" aria-selected="true">Site</button>
+              <button type="button" role="tab" data-pillar="cooling" aria-selected="false">Cooling</button>
+              <button type="button" role="tab" data-pillar="energy" aria-selected="false">Energy</button>
+              <button type="button" role="tab" data-pillar="benefits" aria-selected="false">Benefits</button>
+            </div>
+            <div class="tray-title">
+              <div class="tray-title-row">
+                <h2 id="pillar-heading">Design &amp; urban integration</h2>
+              </div>
+              <span id="design-caption">20 MW IT · 220 GWh/yr · Zone 2A (TX)</span>
+            </div>
+            <div class="design-choices" id="design-choices"></div>
+            <div class="design-specs" id="design-specs" aria-label="Selected package profile"></div>
+            <button id="evidence" class="evidence-link">
+              <i data-icon="book"></i>Case evidence &amp; guardrails
+            </button>
+          </div>
+        </aside>
+        <div id="option-popover" class="option-popover" hidden role="tooltip"></div>
+      </div>
+      <section class="analysis" aria-label="Live scenario analysis">
+        <div class="analysis-head">
+          <div><span class="pulse"></span>Live analysis</div>
+          <div class="domain-tabs" role="group" aria-label="Indicator domain">
+            <button type="button" data-domain="overview" aria-pressed="true" aria-label="Overview indicators" title="Overview"><i data-icon="overview"></i></button>
+            <button type="button" data-domain="env" aria-pressed="false" aria-label="Environmental indicators" title="Environmental"><i data-icon="leaf"></i></button>
+            <button type="button" data-domain="econ" aria-pressed="false" aria-label="Economic indicators" title="Economic"><i data-icon="dollar"></i></button>
+            <button type="button" data-domain="social" aria-pressed="false" aria-label="Social indicators" title="Social"><i data-icon="users"></i></button>
+          </div>
+          <div class="siting-cell"><button id="siting-check" title="Check the footprint"></button></div>
+          <button id="methods" class="icon-btn" aria-label="Model assumptions and scope limits"><i data-icon="info"></i></button>
+        </div>
+        <div class="metrics" id="metrics"></div>
       </section>
+      <section id="sentiment" hidden aria-label="Map of simulated College Station community discussions"></section>
+      <span class="sr-only" id="local-status" role="status">Notes stay on this device</span>
     </main>
     <dialog id="dialog" aria-labelledby="dialog-title">
       <div class="dialog-head">
